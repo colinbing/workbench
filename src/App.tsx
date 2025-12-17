@@ -1,4 +1,17 @@
 import type React from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragCancelEvent,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature, FeatureStatus, Phase, WorkbenchDoc } from './types';
 import { loadDoc, saveDoc } from './storage';
@@ -131,10 +144,6 @@ export default function App() {
     y: 0,
     target: { kind: 'background' },
   });
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-  const [insertAfter, setInsertAfter] = useState<boolean>(false);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [editorId, setEditorId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState<string>('');
@@ -144,12 +153,224 @@ export default function App() {
   const [draftStatus, setDraftStatus] = useState<FeatureStatus>('not_started');
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [statusPopover, setStatusPopover] = useState<{
     open: boolean;
     featureId: string | null;
     x: number;
     y: number;
   }>({ open: false, featureId: null, x: 0, y: 0 });
+
+  function SortableCard({
+    feature: f,
+    isSelected,
+  }: {
+    feature: Feature;
+    isSelected: boolean;
+  }) {
+    const meta = STATUS_META[f.status];
+    const phaseName = phasesById.get(f.phaseId)?.name ?? 'Unknown phase';
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: f.id });
+    const computedBorderColor =
+      hoverId === f.id || isDragging ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.075)';
+    const dragStyle = {
+      transform: transform ? CSS.Transform.toString(transform) : undefined,
+      transition,
+    };
+
+    return (
+      <div
+        ref={setNodeRef}
+        data-feature-id={f.id}
+        onClick={() => {
+          setHoverId(null);
+          setSelectedId(f.id);
+        }}
+        onDoubleClick={() => openEditor(f.id)}
+        onMouseEnter={() => setHoverId(f.id)}
+        onMouseLeave={() => {
+          setHoverId(null);
+          setActiveId(null);
+        }}
+        onMouseDown={() => setActiveId(f.id)}
+        onMouseUp={() => setActiveId(null)}
+        onContextMenu={(e) => openCtxMenu(e, { kind: 'feature', id: f.id })}
+        style={{
+          ...cardBase,
+          ...(hoverId === f.id ? cardHover : null),
+          ...(activeId === f.id ? cardActive : null),
+          ...(isSelected ? cardSelected : null),
+          borderColor: computedBorderColor,
+          cursor: 'default',
+          position: 'relative',
+          transform: dragStyle.transform ?? (hoverId === f.id ? cardHover.transform : activeId === f.id ? cardActive.transform : undefined),
+          transition:
+            dragStyle.transition ??
+            'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 200ms ease, background 200ms ease, border-color 200ms ease',
+          opacity: isDragging ? 0.6 : 1,
+          boxShadow: isDragging ? '0 18px 42px rgba(0,0,0,0.38)' : cardBase.boxShadow,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 12px',
+            borderTopLeftRadius: 12,
+            borderTopRightRadius: 12,
+            background: meta.bar,
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          <div
+            {...attributes}
+            {...listeners}
+            style={{
+              cursor: isDragging ? 'grabbing' : 'grab',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              opacity: 0.75,
+              fontSize: 15,
+              lineHeight: 1,
+              padding: 0,
+              borderRadius: 0,
+              transform: 'translateY(-0.5px)',
+            }}
+            aria-label="Drag"
+            title="Drag"
+          >
+            ⋮⋮
+          </div>
+          <div style={{ fontWeight: 750, flex: 1, letterSpacing: 0.1, fontSize: 16, lineHeight: 1.2 }}>
+            {f.title}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: meta.chipBg,
+              border: `1px solid ${meta.chipBorder}`,
+              color: meta.chipText,
+              whiteSpace: 'nowrap',
+              cursor: 'pointer',
+            }}
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setStatusPopover({ open: true, featureId: f.id, x: r.left + r.width, y: r.top + r.height });
+            }}
+          >
+            {meta.label}
+          </div>
+        </div>
+
+        <div style={{ padding: '10px 12px 12px' }}>
+          {f.description ? (
+            <div style={{ marginTop: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.35 }}>
+              {f.description}
+            </div>
+          ) : null}
+
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, opacity: 0.92 }}>
+            <span style={chipMuted}>{phaseName}</span>
+            {f.tags.length ? <span style={chip}>{f.tags.join(', ')}</span> : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function CardPreview({ feature: f, isSelected }: { feature: Feature; isSelected: boolean }) {
+    const meta = STATUS_META[f.status];
+    const phaseName = phasesById.get(f.phaseId)?.name ?? 'Unknown phase';
+    const computedBorderColor = 'rgba(255,255,255,0.11)';
+    return (
+      <div
+        data-feature-id={f.id}
+        style={{
+          ...cardBase,
+          ...(isSelected ? cardSelected : null),
+          borderColor: computedBorderColor,
+          cursor: 'default',
+          position: 'relative',
+          boxShadow: '0 18px 42px rgba(0,0,0,0.38)',
+          transform: 'scale(1.02)',
+          opacity: 0.98,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 12px',
+            borderTopLeftRadius: 12,
+            borderTopRightRadius: 12,
+            background: meta.bar,
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          <div
+            style={{
+              cursor: 'grab',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              opacity: 0.75,
+              fontSize: 15,
+              lineHeight: 1,
+              padding: 0,
+              borderRadius: 0,
+              transform: 'translateY(-0.5px)',
+            }}
+          >
+            ⋮⋮
+          </div>
+          <div style={{ fontWeight: 750, flex: 1, letterSpacing: 0.1, fontSize: 16, lineHeight: 1.2 }}>
+            {f.title}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: meta.chipBg,
+              border: `1px solid ${meta.chipBorder}`,
+              color: meta.chipText,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {meta.label}
+          </div>
+        </div>
+
+        <div style={{ padding: '10px 12px 12px' }}>
+          {f.description ? (
+            <div style={{ marginTop: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.35 }}>
+              {f.description}
+            </div>
+          ) : null}
+
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, opacity: 0.92 }}>
+            <span style={chipMuted}>{phaseName}</span>
+            {f.tags.length ? <span style={chip}>{f.tags.join(', ')}</span> : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // For focusing after create
   const scrollToIdRef = useRef<string | null>(null);
@@ -309,29 +530,6 @@ function cloneFeature(id: string) {
     setStatusPopover({ open: false, featureId: null, x: 0, y: 0 });
   }
 
-function reorderVisibleFeatures(drag: string, over: string, after: boolean) {
-  if (drag === over) return;
-  const visible = [...filteredFeatures];
-  const dragIdx = visible.findIndex((f) => f.id === drag);
-  const overIdx = visible.findIndex((f) => f.id === over);
-  if (dragIdx === -1 || overIdx === -1) return;
-
-  const [item] = visible.splice(dragIdx, 1);
-  let targetIdx = visible.findIndex((f) => f.id === over);
-  if (targetIdx === -1 || !item) return;
-  if (after) targetIdx += 1;
-  visible.splice(targetIdx, 0, item);
-
-  const visibleIds = visible.map((f) => f.id);
-
-  setDoc((prev) => {
-    const nonVisible = prev.features.filter((f) => !visibleIds.includes(f.id));
-    const merged = [...visible, ...nonVisible];
-    const reOrdered = merged.map((f, idx) => ({ ...f, order: idx + 1 }));
-    return { ...prev, features: reOrdered };
-  });
-}
-
 function closeEditor() {
   setIsEditorOpen(false);
   setEditorId(null);
@@ -432,8 +630,6 @@ useEffect(() => {
     boxSizing: 'border-box',
     maxWidth: '100%',
     width: '100%',
-    display: 'inline-block',
-    breakInside: 'avoid',
     borderRadius: 14,
     border: '1px solid rgba(255,255,255,0.075)',
     outline: 'none',
@@ -488,6 +684,7 @@ useEffect(() => {
     cursor: 'pointer',
   };
   const noStatusSelected = statusFilter.size === 0;
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   return (
     <div
@@ -605,203 +802,92 @@ useEffect(() => {
           padding: 0,
         }}
       >
-        <div
-          style={{
-            height: '100%',
-            columnWidth: 300,
-            columnGap: 12,
-            columnFill: 'auto',
-            width: '100%',
-            maxWidth: '100%',
-            paddingRight: 12,
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
+          onDragCancel={(_event: DragCancelEvent) => setActiveDragId(null)}
+          onDragEnd={(event: DragEndEvent) => {
+            const { active, over } = event;
+            setActiveDragId(null);
+            if (!over) return;
+            const activeId = String(active.id);
+            const overId = String(over.id);
+            if (activeId === overId) return;
+
+            const visible = filteredFeatures;
+            const visibleIds = visible.map((v) => v.id);
+            const oldIndex = visibleIds.indexOf(activeId);
+            const newIndex = visibleIds.indexOf(overId);
+            if (oldIndex === -1 || newIndex === -1) return;
+
+            const nextIds = arrayMove(visibleIds, oldIndex, newIndex);
+            setDoc((prev) => {
+              const byId = new Map(prev.features.map((f) => [f.id, f]));
+              const visibleNext = nextIds.map((id) => byId.get(id)).filter(Boolean) as Feature[];
+              const visibleSet = new Set(nextIds);
+              const nonVisible = prev.features
+                .filter((f) => !visibleSet.has(f.id))
+                .sort((a, b) => a.order - b.order);
+
+              const merged = [...visibleNext, ...nonVisible].map((f, idx) => ({
+                ...f,
+                order: idx + 1,
+                updatedAt: f.updatedAt,
+              }));
+
+              return { ...prev, features: merged };
+            });
           }}
         >
-          {(() => {
-            const visible = filteredFeatures;
-            const dragIndex = dragId ? visible.findIndex((v) => v.id === dragId) : -1;
-            const overIndexBase = overId ? visible.findIndex((v) => v.id === overId) : -1;
-            const targetIndex = overIndexBase === -1 ? null : overIndexBase + (insertAfter ? 1 : 0);
+          <SortableContext items={filteredFeatures.map((f) => f.id)} strategy={rectSortingStrategy}>
+            <div
+              style={{
+                height: '100%',
+                width: '100%',
+                maxWidth: '100%',
+                paddingRight: 12,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                gap: 12,
+                alignContent: 'start',
+                overflow: 'hidden',
+              }}
+            >
+              {filteredFeatures.map((f) => (
+                <SortableCard key={f.id} feature={f} isSelected={f.id === selectedId} />
+              ))}
 
-            return visible.map((f) => {
-              const meta = STATUS_META[f.status];
-              const phaseName = phasesById.get(f.phaseId)?.name ?? 'Unknown phase';
-              const isSelected = f.id === selectedId;
-              const computedBorderColor =
-                hoverId === f.id || dragId === f.id ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.075)';
-
-              const index = visible.findIndex((v) => v.id === f.id);
-              const effectiveTarget = dragOverIndex !== null ? dragOverIndex : targetIndex;
-              let shift: string | undefined;
-              if (dragId && effectiveTarget !== null && dragIndex !== -1 && index !== -1) {
-                if (effectiveTarget > dragIndex && index > dragIndex && index < effectiveTarget) {
-                  shift = 'translateY(-12px)';
-                } else if (effectiveTarget < dragIndex && index >= effectiveTarget && index < dragIndex) {
-                  shift = 'translateY(12px)';
-                }
-              }
-              const baseTransform =
-                activeId === f.id || dragId === f.id
-                  ? cardActive.transform
-                  : hoverId === f.id
-                    ? cardHover.transform
-                    : undefined;
-              const transform = shift ?? baseTransform;
-
-              return (
-                <div
-                  key={f.id}
-                  data-feature-id={f.id}
-                  onClick={() => {
-                    setHoverId(null);
-                    setOverId(null);
-                    setInsertAfter(false);
-                    setDragId(null);
-                    setSelectedId(f.id);
-                  }}
-                  onDoubleClick={() => openEditor(f.id)}
-                  onMouseEnter={() => setHoverId(f.id)}
-                  onMouseLeave={() => {
-                    setHoverId(null);
-                    setActiveId(null);
-                    setOverId(null);
-                    setInsertAfter(false);
-                    setDragOverIndex(null);
-                  }}
-                  onMouseDown={() => setActiveId(f.id)}
-                  onMouseUp={() => setActiveId(null)}
-                  onDragOver={(e: React.DragEvent<HTMLDivElement>) => {
-                    e.preventDefault();
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    const after = e.clientY > rect.top + rect.height / 2;
-                    setOverId(f.id);
-                    setInsertAfter(after);
-                    const overIdx = visible.findIndex((v) => v.id === f.id);
-                    const targetIdx = overIdx === -1 ? null : overIdx + (after ? 1 : 0);
-                    setDragOverIndex(targetIdx);
-                  }}
-                  onDrop={(e: React.DragEvent<HTMLDivElement>) => {
-                    e.preventDefault();
-                    if (!dragId) return;
-                    reorderVisibleFeatures(dragId, f.id, insertAfter);
-                    setDragId(null);
-                    setOverId(null);
-                    setInsertAfter(false);
-                    setDragOverIndex(null);
-                  }}
-                  onContextMenu={(e) => openCtxMenu(e, { kind: 'feature', id: f.id })}
-                  style={{
-                    ...cardBase,
-                    ...(hoverId === f.id ? cardHover : null),
-                    ...(activeId === f.id || dragId === f.id ? cardActive : null),
-                    ...(isSelected ? cardSelected : null),
-                    borderColor: computedBorderColor,
-                    cursor: 'default',
-                    marginBottom: 10,
-                    opacity: dragId === f.id ? 0.55 : 1,
-                    position: 'relative',
-                    boxShadow:
-                      dragId && overId === f.id
-                        ? insertAfter
-                          ? '0 2px 0 0 rgba(160,210,255,0.9) inset'
-                          : '0 -2px 0 0 rgba(160,210,255,0.9) inset'
-                        : undefined,
-                    transform,
-                    transition:
-                      'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 200ms ease, background 200ms ease, border-color 200ms ease',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '9px 12px',
-                      borderTopLeftRadius: 12,
-                      borderTopRightRadius: 12,
-                      background: meta.bar,
-                      borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    }}
-                  >
-                    <div
-                      draggable
-                      onDragStart={(e: React.DragEvent<HTMLDivElement>) => {
-                        setDragId(f.id);
-                        setOverId(f.id);
-                        setInsertAfter(false);
-                        e.dataTransfer.effectAllowed = 'move';
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setOverId(null);
-                        setInsertAfter(false);
-                        setDragOverIndex(null);
-                      }}
-                      style={{
-                        cursor: dragId === f.id ? 'grabbing' : 'grab',
-                        userSelect: 'none',
-                        WebkitUserSelect: 'none',
-                        opacity: 0.75,
-                        fontSize: 15,
-                        lineHeight: 1,
-                        padding: 0,
-                        borderRadius: 0,
-                        transform: 'translateY(-0.5px)',
-                      }}
-                      aria-label="Drag"
-                      title="Drag"
-                    >
-                      ⋮⋮
-                    </div>
-                    <div style={{ fontWeight: 750, flex: 1, letterSpacing: 0.1, fontSize: 16, lineHeight: 1.2 }}>
-                      {f.title}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        padding: '4px 8px',
-                        borderRadius: 999,
-                        background: meta.chipBg,
-                        border: `1px solid ${meta.chipBorder}`,
-                        color: meta.chipText,
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        setStatusPopover({ open: true, featureId: f.id, x: r.left + r.width, y: r.top + r.height });
-                      }}
-                    >
-                      {meta.label}
-                    </div>
-                  </div>
-
-                  <div style={{ padding: '10px 12px 12px' }}>
-                    {f.description ? (
-                      <div style={{ marginTop: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.35 }}>
-                        {f.description}
-                      </div>
-                    ) : null}
-
-                    <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12, opacity: 0.92 }}>
-                      <span style={chipMuted}>{phaseName}</span>
-                      {f.tags.length ? <span style={chip}>{f.tags.join(', ')}</span> : null}
-                    </div>
-                  </div>
+              {!filteredFeatures.length ? (
+                <div style={{ opacity: 0.65, fontSize: 14, paddingTop: 12 }}>
+                  {noStatusSelected ? 'Select a status to see features.' : 'No features match your filters.'}
                 </div>
-              );
-            });
-          })()}
-
-          {!filteredFeatures.length ? (
-            <div style={{ opacity: 0.65, fontSize: 14, paddingTop: 12 }}>
-              {noStatusSelected ? 'Select a status to see features.' : 'No features match your filters.'}
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          </SortableContext>
+          <DragOverlay>
+            {activeDragId
+              ? (() => {
+                  const activeFeature = doc.features.find((x) => x.id === activeDragId);
+                  if (!activeFeature) return null;
+                  return (
+                    <div
+                      style={{
+                        ...cardBase,
+                        width: 300,
+                        boxShadow: '0 20px 55px rgba(0,0,0,0.55)',
+                        transform: 'scale(1.02)',
+                        opacity: 0.98,
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <CardPreview feature={activeFeature} isSelected={activeFeature.id === selectedId} />
+                    </div>
+                  );
+                })()
+              : null}
+          </DragOverlay>
+        </DndContext>
       </div>
       {statusPopover.open && statusPopover.featureId ? (
         <div
