@@ -242,9 +242,9 @@ function firstPhaseId(phases: Phase[]) {
   return sorted[0]?.id ?? '';
 }
 
-const CARD_W = 300;
-const CARD_MIN_H = 140;
-const CARD_MAX_H = 170;
+const CARD_W = 320;
+const CARD_MIN_H = 155;
+const CARD_MAX_H = 195;
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
 const BOARD_PAD_BOTTOM = 16;
@@ -514,6 +514,12 @@ export default function App() {
     x: number;
     y: number;
   }>({ open: false, featureId: null, x: 0, y: 0 });
+  const [tagPopover, setTagPopover] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+    tags: string[];
+  }>({ open: false, x: 0, y: 0, tags: [] });
   const [statusFilterMenu, setStatusFilterMenu] = useState<{ open: boolean; x: number; y: number }>({
     open: false,
     x: 0,
@@ -562,6 +568,10 @@ export default function App() {
   }) {
     const meta = STATUS_META[f.status];
     const showMore = !!f.description && (f.description.length > 120 || f.description.includes('\n'));
+    const tags = f.tags ?? [];
+    const primaryTag = tags[0] ?? '';
+    const extraCount = Math.max(0, tags.length - 1);
+    const displayTag = primaryTag.length > 16 ? `${primaryTag.slice(0, 15)}…` : primaryTag;
     const {
       attributes,
       listeners,
@@ -727,6 +737,7 @@ export default function App() {
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
+            gap: 8,
           }}
           data-card-body
           onDoubleClick={(e) => {
@@ -735,110 +746,153 @@ export default function App() {
             openEditor(f.id);
           }}
         >
-                    {f.description ? (
-                      <div style={{ position: 'relative', marginTop: 0 }}>
-                        <div
-                          style={{
-                            opacity: 0.85,
-                            fontSize: 14,
-                            lineHeight: 1.3,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 4,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {f.description}
-                        </div>
+          <div
+            style={{
+              flex: '1 1 auto',
+              minHeight: 0,
+              overflow: 'hidden',
+              paddingBottom: 2,
+            }}
+          >
+            {f.description ? (
+              <div style={{ position: 'relative', marginTop: 0 }}>
+                <div
+                  style={{
+                    opacity: 0.85,
+                    fontSize: 14,
+                    lineHeight: 1.3,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {f.description}
+                </div>
 
-                        {showMore ? (
-                          <>
-                            <div
-                              style={{
-                                position: 'absolute',
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                height: 28,
-                                pointerEvents: 'none',
-                                background:
-                                  'linear-gradient(180deg, rgba(20,20,20,0), rgba(20,20,20,0.85))',
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetails(f.id);
-                              }}
-                              title="Open details"
-                              style={{
-                                position: 'absolute',
-                                right: 0,
-                                bottom: -2,
-                                padding: '4px 8px',
-                                borderRadius: 999,
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                background: 'rgba(255,255,255,0.04)',
-                                color: 'rgba(255,255,255,0.82)',
-                                cursor: 'pointer',
-                                fontSize: 12,
-                                fontWeight: 800,
-                                letterSpacing: 0.1,
-                              }}
-                            >
-                              More
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    ) : null}
+                {showMore ? (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 20,
+                      pointerEvents: 'none',
+                      background:
+                        'linear-gradient(180deg, rgba(20,20,20,0), rgba(20,20,20,0.55))',
+                      borderRadius: 10,
+                    }}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </div>
 
           <div
             style={{
-              marginTop: 'auto',
+              flex: '0 0 auto',
               display: 'flex',
-              gap: 8,
-              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              minWidth: 0,
               fontSize: 12,
               opacity: 0.92,
             }}
           >
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 700,
-                padding: '3px 7px',
-                borderRadius: 999,
-                background: meta.chipBg,
-                border: `1px solid ${meta.chipBorder}`,
-                color: meta.chipText,
-                whiteSpace: 'nowrap',
-                cursor: 'pointer',
-                flexShrink: 0,
-              }}
-              role="button"
-              tabIndex={0}
-              data-status-chip
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setStatusPopover({
-                  open: true,
-                  featureId: f.id,
-                  x: r.left + r.width - 160,
-                  y: r.top + r.height + 6,
-                });
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                minWidth: 0,
+                overflow: 'hidden',
               }}
             >
-              {meta.label}
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '3px 7px',
+                  borderRadius: 999,
+                  background: meta.chipBg,
+                  border: `1px solid ${meta.chipBorder}`,
+                  color: meta.chipText,
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+                role="button"
+                tabIndex={0}
+                data-status-chip
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setStatusPopover({
+                    open: true,
+                    featureId: f.id,
+                    x: r.left + r.width - 160,
+                    y: r.top + r.height + 6,
+                  });
+                }}
+              >
+                {meta.label}
+              </div>
+              {tags.length ? (
+                <span
+                  style={{
+                    ...chip,
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => {
+                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setTagPopover({ open: true, x: r.left, y: r.bottom + 6, tags });
+                  }}
+                  onMouseLeave={() => setTagPopover({ open: false, x: 0, y: 0, tags: [] })}
+                  title={tags.join(', ')}
+                >
+                  {extraCount > 0 ? `${displayTag}, +${extraCount}` : displayTag}
+                </span>
+              ) : null}
             </div>
-            {f.tags.length ? <span style={chip}>{f.tags.join(', ')}</span> : null}
+            {showMore ? (
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (detailsOpen && detailsId === f.id) {
+                    closeDetails();
+                  } else {
+                    openDetails(f.id);
+                  }
+                }}
+                title={detailsOpen && detailsId === f.id ? 'Close details' : 'Open details'}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.04)',
+                  color: 'rgba(255,255,255,0.82)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: 0.1,
+                  flexShrink: 0,
+                }}
+              >
+                {detailsOpen && detailsId === f.id ? 'Close' : 'More'}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2743,7 +2797,7 @@ useEffect(() => {
                               <div
                                 style={{
                                   ...cardBase,
-                                  width: 300,
+                                  width: CARD_W,
                                   boxShadow: '0 20px 55px rgba(0,0,0,0.55)',
                                   transform: 'scale(1.02)',
                                   opacity: 0.98,
@@ -2929,6 +2983,32 @@ useEffect(() => {
               );
             })}
           </div>
+        </div>
+      ) : null}
+      {tagPopover.open ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: tagPopover.x,
+            top: tagPopover.y,
+            zIndex: 10040,
+            background: 'rgba(24,24,24,0.94)',
+            color: '#f5f5f5',
+            borderRadius: 10,
+            padding: '8px 10px',
+            minWidth: 160,
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 14px 32px rgba(0,0,0,0.38)',
+            display: 'grid',
+            gap: 6,
+            pointerEvents: 'none',
+          }}
+        >
+          {tagPopover.tags.map((tag) => (
+            <div key={tag} style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>
+              {tag}
+            </div>
+          ))}
         </div>
       ) : null}
       {ctxMenu.open && !isEditorOpen ? (
