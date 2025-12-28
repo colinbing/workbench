@@ -567,11 +567,16 @@ export default function App() {
     isSelected: boolean;
   }) {
     const meta = STATUS_META[f.status];
-    const showMore = !!f.description && (f.description.length > 120 || f.description.includes('\n'));
+    const descTextRef = useRef<HTMLDivElement | null>(null);
+    const [isTruncated, setIsTruncated] = useState(false);
     const tags = f.tags ?? [];
     const primaryTag = tags[0] ?? '';
     const extraCount = Math.max(0, tags.length - 1);
     const displayTag = primaryTag.length > 16 ? `${primaryTag.slice(0, 15)}…` : primaryTag;
+    const isDetailsActive = detailsOpen && detailsId === f.id;
+    const allowHoverEffects = !isDetailsActive;
+    const isHovering = hoverId === f.id && allowHoverEffects;
+    const isPressing = activeId === f.id && allowHoverEffects;
     const {
       attributes,
       listeners,
@@ -586,12 +591,55 @@ export default function App() {
         easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
     });
-    const computedBorderColor =
-      hoverId === f.id || isDragging ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.075)';
+    const computedBorderColor = isDragging
+      ? 'rgba(255,255,255,0.11)'
+      : isHovering
+        ? 'rgba(255,255,255,0.11)'
+        : isDetailsActive
+          ? 'rgba(120,200,255,0.28)'
+          : 'rgba(255,255,255,0.075)';
     const dragStyle = {
       transform: transform ? CSS.Transform.toString(transform) : undefined,
       transition,
     };
+
+    useLayoutEffect(() => {
+      if (!f.description) {
+        setIsTruncated(false);
+        return;
+      }
+      const el = descTextRef.current;
+      if (!el) return;
+      const width = el.clientWidth;
+      if (width <= 0) return;
+
+      const clampLines = 3;
+      const fontSize = 14;
+      const lineHeight = 1.3;
+      const lineHeightPx = fontSize * lineHeight;
+      const clampHeight = clampLines * lineHeightPx;
+      const computed = window.getComputedStyle(el);
+
+      const measurer = document.createElement('div');
+      measurer.style.position = 'fixed';
+      measurer.style.visibility = 'hidden';
+      measurer.style.pointerEvents = 'none';
+      measurer.style.left = '-9999px';
+      measurer.style.top = '-9999px';
+      measurer.style.width = `${width}px`;
+      measurer.style.fontSize = `${fontSize}px`;
+      measurer.style.lineHeight = String(lineHeight);
+      measurer.style.fontFamily = computed.fontFamily;
+      measurer.style.fontWeight = computed.fontWeight;
+      measurer.style.whiteSpace = 'pre-wrap';
+      measurer.style.overflowWrap = 'anywhere';
+      measurer.style.wordBreak = 'break-word';
+      measurer.textContent = f.description;
+      document.body.appendChild(measurer);
+      const fullHeight = measurer.getBoundingClientRect().height;
+      document.body.removeChild(measurer);
+      setIsTruncated(fullHeight > clampHeight + 2);
+    }, [f.description, cardH, boardRows, CARD_W]);
 
     return (
       <div
@@ -611,8 +659,8 @@ export default function App() {
         onContextMenu={(e) => openCtxMenu(e, { kind: 'feature', id: f.id })}
         style={{
           ...cardBase,
-          ...(hoverId === f.id ? cardHover : null),
-          ...(activeId === f.id ? cardActive : null),
+          ...(isHovering ? cardHover : null),
+          ...(isPressing ? cardActive : null),
           ...(isSelected ? cardSelected : null),
           borderColor: computedBorderColor,
           cursor: 'default',
@@ -620,26 +668,32 @@ export default function App() {
           display: 'flex',
           flexDirection: 'column',
           position: 'relative',
-          transform: dragStyle.transform ?? (hoverId === f.id ? cardHover.transform : activeId === f.id ? cardActive.transform : undefined),
+          transform: dragStyle.transform ?? (isHovering ? cardHover.transform : isPressing ? cardActive.transform : undefined),
           transition:
             dragStyle.transition ??
             'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 200ms ease, background 200ms ease, border-color 200ms ease',
           opacity: isDragging ? 0.6 : 1,
-          boxShadow: isDragging ? '0 18px 42px rgba(0,0,0,0.38)' : cardBase.boxShadow,
+          boxShadow: isDragging
+            ? '0 18px 42px rgba(0,0,0,0.38)'
+            : isDetailsActive
+              ? `${cardBase.boxShadow}, 0 0 0 1px rgba(120,200,255,0.12), 0 0 18px rgba(120,200,255,0.10)`
+              : cardBase.boxShadow,
         }}
       >
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: '20px minmax(0, 1fr)',
-            alignItems: 'start',
+            alignItems: 'center',
             columnGap: 10,
-            padding: '9px 12px',
+            padding: '8px 12px',
             flex: '0 0 auto',
-            minHeight: 46,
+            minHeight: 42,
             borderTopLeftRadius: 12,
             borderTopRightRadius: 12,
             background: meta.bar,
+            boxShadow: isDetailsActive ? 'inset 0 1px 0 rgba(255,255,255,0.10)' : undefined,
+            filter: isDetailsActive ? 'saturate(1.05)' : undefined,
             borderBottom: '1px solid rgba(255,255,255,0.06)',
           }}
         >
@@ -655,7 +709,6 @@ export default function App() {
               lineHeight: 1,
               padding: 0,
               borderRadius: 0,
-              transform: 'translateY(-0.5px)',
               justifySelf: 'start',
             }}
             aria-label="Drag"
@@ -757,6 +810,7 @@ export default function App() {
             {f.description ? (
               <div style={{ position: 'relative', marginTop: 0 }}>
                 <div
+                  ref={descTextRef}
                   style={{
                     opacity: 0.85,
                     fontSize: 14,
@@ -765,26 +819,25 @@ export default function App() {
                     WebkitLineClamp: 3,
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
+                    ...(isTruncated
+                      ? {
+                          paddingBottom: 8,
+                          WebkitMaskImage:
+                            'linear-gradient(180deg, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)',
+                          maskImage:
+                            'linear-gradient(180deg, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)',
+                          WebkitMaskSize: '100% 100%',
+                          maskSize: '100% 100%',
+                        }
+                      : null),
                   }}
                 >
                   {f.description}
                 </div>
 
-                {showMore ? (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: 20,
-                      pointerEvents: 'none',
-                      background:
-                        'linear-gradient(180deg, rgba(20,20,20,0), rgba(20,20,20,0.55))',
-                      borderRadius: 10,
-                    }}
-                  />
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -861,7 +914,7 @@ export default function App() {
                 </span>
               ) : null}
             </div>
-            {showMore ? (
+            {isTruncated ? (
               <button
                 type="button"
                 onMouseDown={(e) => {
@@ -920,10 +973,10 @@ export default function App() {
           style={{
             display: 'grid',
             gridTemplateColumns: '20px minmax(0, 1fr)',
-            alignItems: 'start',
+            alignItems: 'center',
             columnGap: 10,
-            padding: '9px 12px',
-            minHeight: 46,
+            padding: '8px 12px',
+            minHeight: 42,
             borderTopLeftRadius: 12,
             borderTopRightRadius: 12,
             background: meta.bar,
@@ -940,7 +993,6 @@ export default function App() {
               lineHeight: 1,
               padding: 0,
               borderRadius: 0,
-              transform: 'translateY(-0.5px)',
             }}
           >
             ⋮⋮
@@ -966,8 +1018,18 @@ export default function App() {
         </div>
 
         <div style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {f.description ? (
-            <div style={{ marginTop: 0, opacity: 0.85, fontSize: 14, lineHeight: 1.35 }}>
+              {f.description ? (
+            <div
+              style={{
+                marginTop: 0,
+                opacity: 0.85,
+                fontSize: 14,
+                lineHeight: 1.35,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              }}
+            >
               {f.description}
             </div>
           ) : null}
@@ -1206,12 +1268,12 @@ export default function App() {
               <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: 0.1, lineHeight: 1.15 }}>
                 {feature.title}
               </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
                 <span
                   style={{
                     fontSize: 12,
                     fontWeight: 800,
-                    padding: '4px 8px',
+                    padding: '3px 8px',
                     borderRadius: 999,
                     background: meta.chipBg,
                     border: `1px solid ${meta.chipBorder}`,
@@ -1222,9 +1284,13 @@ export default function App() {
                   {meta.label}
                 </span>
 
-                <span style={{ ...chipMuted }}>{phaseName}</span>
+                <span style={{ ...chipMuted, padding: '3px 8px', fontWeight: 800 }}>{phaseName}</span>
 
-                {feature.tags.length ? <span style={chip}>{feature.tags.join(', ')}</span> : null}
+                {feature.tags.length ? (
+                  <span style={{ ...chip, padding: '3px 8px', fontWeight: 800 }}>
+                    {feature.tags.join(', ')}
+                  </span>
+                ) : null}
               </div>
             </div>
 
