@@ -1,4 +1,4 @@
-import type React from 'react';
+import * as React from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -245,6 +245,7 @@ function firstPhaseId(phases: Phase[]) {
 const CARD_W = 320;
 const CARD_MIN_H = 155;
 const CARD_MAX_H = 195;
+const DEBUG_CARD_EDIT = false;
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
 const BOARD_PAD_BOTTOM = 16;
@@ -569,6 +570,7 @@ export default function App() {
     const meta = STATUS_META[f.status];
     const descTextRef = useRef<HTMLDivElement | null>(null);
     const [isTruncated, setIsTruncated] = useState(false);
+    const bodyElRef = React.useRef<HTMLDivElement | null>(null);
     const tags = f.tags ?? [];
     const primaryTag = tags[0] ?? '';
     const extraCount = Math.max(0, tags.length - 1);
@@ -640,6 +642,65 @@ export default function App() {
       document.body.removeChild(measurer);
       setIsTruncated(fullHeight > clampHeight + 2);
     }, [f.description, cardH, boardRows, CARD_W]);
+
+    React.useEffect(() => {
+      const el = bodyElRef.current;
+      if (!el) return;
+
+      const blockedSelector =
+        'button, input, textarea, select, [contenteditable="true"], [data-dnd-handle], [data-status-chip], [data-tag-chip], [data-title]';
+
+      const DBL_MS = 340;
+      const DBL_MOVE_PX = 8;
+
+      const onPtrDown = (ev: PointerEvent) => {
+        // Only left mouse / primary touch
+        if ((ev as any).button != null && (ev as any).button !== 0) return;
+        if ((ev as any).isPrimary === false) return;
+
+        // If a drag is active, never open editor
+        if (activeDragId) return;
+        if (editingTitleId) return;
+
+        const t = ev.target as HTMLElement | null;
+        if (!t) return;
+
+        // Don’t trigger from interactive elements inside the body
+        if (t.closest(blockedSelector)) return;
+
+        const now = performance.now();
+        const x = (ev as any).clientX ?? 0;
+        const y = (ev as any).clientY ?? 0;
+
+        const prev = lastBodyPtrRef.current;
+
+        const isDouble =
+          !!prev &&
+          prev.featureId === f.id &&
+          now - prev.t <= DBL_MS &&
+          Math.abs(x - prev.x) <= DBL_MOVE_PX &&
+          Math.abs(y - prev.y) <= DBL_MOVE_PX;
+
+        if (isDouble) {
+          lastBodyPtrRef.current = null;
+
+          // Stop DnD from treating this as a drag start candidate
+          ev.preventDefault();
+          ev.stopPropagation();
+
+          setHoverId(null);
+          setSelectedId(f.id);
+          openEditor(f.id);
+          return;
+        }
+
+        lastBodyPtrRef.current = { t: now, x, y, featureId: f.id };
+      };
+
+      // Capture phase so we see it even if DnD messes with bubbling
+      el.addEventListener('pointerdown', onPtrDown, true);
+      return () => el.removeEventListener('pointerdown', onPtrDown, true);
+    }, [f.id, activeDragId, editingTitleId, openEditor, setSelectedId]);
 
     return (
       <div
@@ -783,6 +844,7 @@ export default function App() {
         </div>
 
         <div
+          ref={bodyElRef}
           style={{
             padding: '8px 12px 10px',
             flex: '1 1 auto',
@@ -793,11 +855,6 @@ export default function App() {
             gap: 8,
           }}
           data-card-body
-          onDoubleClick={(e) => {
-            if (editingTitleId) return;
-            e.stopPropagation();
-            openEditor(f.id);
-          }}
         >
           <div
             style={{
@@ -819,23 +876,23 @@ export default function App() {
                     WebkitLineClamp: 3,
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
-                    whiteSpace: 'pre-wrap',
+                    whiteSpace: 'normal',
                     overflowWrap: 'anywhere',
                     wordBreak: 'break-word',
                     ...(isTruncated
                       ? {
-                          paddingBottom: 8,
+                          paddingBottom: 4,
                           WebkitMaskImage:
-                            'linear-gradient(180deg, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)',
+                            'linear-gradient(180deg, rgba(0,0,0,1) 78%, rgba(0,0,0,0) 100%)',
                           maskImage:
-                            'linear-gradient(180deg, rgba(0,0,0,1) 65%, rgba(0,0,0,0) 100%)',
+                            'linear-gradient(180deg, rgba(0,0,0,1) 78%, rgba(0,0,0,0) 100%)',
                           WebkitMaskSize: '100% 100%',
                           maskSize: '100% 100%',
                         }
                       : null),
                   }}
                 >
-                  {f.description}
+                  {renderCompactCardText(f.description)}
                 </div>
 
               </div>
@@ -895,6 +952,7 @@ export default function App() {
               </div>
               {tags.length ? (
                 <span
+                  data-tag-chip
                   style={{
                     ...chip,
                     minWidth: 0,
@@ -903,11 +961,11 @@ export default function App() {
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
-                  onMouseEnter={(e) => {
+                  onPointerEnter={(e) => {
                     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                     setTagPopover({ open: true, x: r.left, y: r.bottom + 6, tags });
                   }}
-                  onMouseLeave={() => setTagPopover({ open: false, x: 0, y: 0, tags: [] })}
+                  onPointerLeave={() => closeTagPopover()}
                   title={tags.join(', ')}
                 >
                   {extraCount > 0 ? `${displayTag}, +${extraCount}` : displayTag}
@@ -1018,19 +1076,19 @@ export default function App() {
         </div>
 
         <div style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {f.description ? (
+          {f.description ? (
             <div
               style={{
                 marginTop: 0,
                 opacity: 0.85,
                 fontSize: 14,
                 lineHeight: 1.35,
-                whiteSpace: 'pre-wrap',
+                whiteSpace: 'normal',
                 overflowWrap: 'anywhere',
                 wordBreak: 'break-word',
               }}
             >
-              {f.description}
+              {renderCompactCardText(f.description)}
             </div>
           ) : null}
 
@@ -1078,6 +1136,8 @@ export default function App() {
     const cols = Math.max(1, Math.ceil(Math.max(features.length, 1) / boardRows));
     const laneInnerGridW = cols * CARD_W + Math.max(0, cols - 1) * GRID_COL_GAP;
     const laneW = laneInnerGridW + 10 * 2 + 6;
+    const SAFE_LIFT_PAD = 8; // enough to avoid clipping hover lift + shadow without wasting space
+    const padY = Math.max(boardPadTop, SAFE_LIFT_PAD);
 
     return (
       <div
@@ -1199,8 +1259,8 @@ export default function App() {
               width: laneInnerGridW,
               maxWidth: laneInnerGridW,
               paddingRight: 6,
-              paddingTop: boardPadTop,
-              paddingBottom: boardPadTop,
+              paddingTop: padY,
+              paddingBottom: padY,
               flex: '1 1 0',
               minHeight: 0,
               overflow: 'hidden',
@@ -1361,6 +1421,9 @@ export default function App() {
 
   // For focusing after create
   const scrollToIdRef = useRef<string | null>(null);
+  const lastBodyPtrRef = useRef<{ t: number; x: number; y: number; featureId: string } | null>(
+    null
+  );
   const editorTitleRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1551,6 +1614,10 @@ function cloneFeature(id: string) {
     setStatusPopover({ open: false, featureId: null, x: 0, y: 0 });
   }
 
+  function closeTagPopover() {
+    setTagPopover({ open: false, x: 0, y: 0, tags: [] });
+  }
+
 function closeEditor() {
   setIsEditorOpen(false);
   setEditorId(null);
@@ -1735,6 +1802,22 @@ function phaseIdFromLaneId(id: string) {
   return id.slice('phase:'.length);
 }
 
+function renderCompactCardText(text: string) {
+  const norm = (text ?? '').replace(/\r\n/g, '\n');
+  const lines = norm.split('\n');
+  return lines.map((ln, i) => {
+    if (ln.trim() === '') {
+      return <span key={`sp_${i}`} style={{ display: 'block', height: 6 }} />;
+    }
+    return (
+      <span key={`ln_${i}`}>
+        {ln}
+        {i < lines.length - 1 ? <br /> : null}
+      </span>
+    );
+  });
+}
+
 function openStatusFilterMenu(e: React.MouseEvent) {
   e.preventDefault();
   e.stopPropagation();
@@ -1811,11 +1894,29 @@ useEffect(() => {
     setReducedMotion(prefersReducedMotion);
   }, [prefersReducedMotion]);
 
+  useEffect(() => {
+    const root = scrollRootRef.current;
+    if (!root) return;
+
+    if (!activeDragId) return;
+
+    const prevOverflowY = root.style.overflowY;
+    root.style.overflowY = 'hidden';
+
+    return () => {
+      root.style.overflowY = prevOverflowY || 'auto';
+    };
+  }, [activeDragId]);
+
   useLayoutEffect(() => {
     const root = scrollRootRef.current;
     if (!root) return;
 
     const onWheel = (e: WheelEvent) => {
+      if (activeDragId) {
+        e.preventDefault();
+        return;
+      }
       if (isEditorOpen) return;
       if (isTypingContext(e.target)) return;
       const target = e.target as HTMLElement | null;
@@ -1833,7 +1934,7 @@ useEffect(() => {
 
     root.addEventListener('wheel', onWheel, { passive: false });
     return () => root.removeEventListener('wheel', onWheel);
-  }, [activeSection, isEditorOpen, reducedMotion]);
+  }, [activeSection, isEditorOpen, reducedMotion, activeDragId]);
 
   useEffect(() => {
     savePrd(prd);
@@ -1871,6 +1972,29 @@ useEffect(() => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [detailsOpen]);
+
+  useEffect(() => {
+    if (!tagPopover.open) return;
+
+    const onMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const overChip = !!el?.closest?.('[data-tag-chip]');
+      if (!overChip) closeTagPopover();
+    };
+
+    const onDown = () => closeTagPopover();
+    const onScroll = () => closeTagPopover();
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mousedown', onDown, true);
+    window.addEventListener('scroll', onScroll, true);
+
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [tagPopover.open]);
 
   useEffect(() => {
     const root = scrollRootRef.current;
@@ -2704,7 +2828,10 @@ useEffect(() => {
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
-                    onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
+                    onDragStart={(event: DragStartEvent) => {
+                      closeTagPopover();
+                      setActiveDragId(String(event.active.id));
+                    }}
                     onDragCancel={(_event: DragCancelEvent) => setActiveDragId(null)}
                     onDragEnd={(event: DragEndEvent) => {
                       const { active, over } = event;
