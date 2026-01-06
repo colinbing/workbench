@@ -752,13 +752,6 @@ export default function App() {
   }, [theme]);
 
   const STATUS_META = useMemo(() => buildStatusMeta(theme), [theme]);
-  const STATUS_OPTIONS: Array<{ value: FeatureStatus | 'all'; label: string }> = [
-    { value: 'all', label: 'All statuses' },
-    { value: 'not_started', label: STATUS_META.not_started.label },
-    { value: 'in_progress', label: STATUS_META.in_progress.label },
-    { value: 'done', label: STATUS_META.done.label },
-    { value: 'blocked', label: STATUS_META.blocked.label },
-  ];
 
   // Filters
   const ALL_STATUSES: FeatureStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
@@ -1406,7 +1399,7 @@ export default function App() {
     phase: Phase;
     features: Feature[];
   }) {
-    const laneId = `phase:${phase.id}`;
+    const laneId = laneIdForPhase(phase.id);
     const { setNodeRef, isOver } = useDroppable({ id: laneId });
     const cols = Math.max(1, Math.ceil(Math.max(features.length, 1) / boardRows));
     const laneInnerGridW = cols * CARD_W + Math.max(0, cols - 1) * GRID_COL_GAP;
@@ -2514,7 +2507,6 @@ useEffect(() => {
     fontWeight: 700,
     cursor: 'pointer',
   };
-  const noStatusSelected = statusFilter.size === 0;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const shellStyle: React.CSSProperties = {
     height: '100vh',
@@ -2579,14 +2571,6 @@ useEffect(() => {
   const PRD_COL_GAP = 24;
   const PRD_BODY_SIZE = 16;
   const PRD_LINE = 1.6;
-
-  const prdLabelStyle: React.CSSProperties = {
-    fontSize: 12,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    opacity: 0.62,
-    fontWeight: 800,
-  };
 
   const prdBodyStyle: React.CSSProperties = {
     fontSize: PRD_BODY_SIZE,
