@@ -4,6 +4,8 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
+  type DragOverEvent,
+  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
@@ -21,6 +23,8 @@ function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
 const now = () => Date.now();
+// Keep the placeholder visible by skipping sortable transforms during NEW_FEATURE drags.
+const newFeatureSortingStrategy = () => null;
 
 function seedDoc(): WorkbenchDoc {
   const phase1 = { id: uid('phase'), name: 'Phase 1', order: 1 };
@@ -288,12 +292,25 @@ function firstPhaseId(phases: Phase[]) {
   return sorted[0]?.id ?? '';
 }
 
+function downloadText(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 const CARD_W = 320;
 const CARD_MIN_H = 155;
 const CARD_MAX_H = 195;
+const APP_VERSION = '0.1';
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
-const BOARD_PAD_BOTTOM = 16;
+  const BOARD_PAD_BOTTOM = 0;
 type DocSection = 'prd' | 'roadmap' | 'blog' | 'phases';
 
 const SECTION_LABELS: Record<DocSection, string> = {
@@ -535,6 +552,8 @@ function PhaseFromSpaceView({
   doc,
   onOpenPhase,
   onShowAll,
+  onArchivePhase,
+  archivedSet,
   themeVars,
   statusMeta,
   isLight,
@@ -542,6 +561,8 @@ function PhaseFromSpaceView({
   doc: WorkbenchDoc;
   onOpenPhase: (phaseId: string) => void;
   onShowAll: () => void;
+  onArchivePhase: (phaseId: string) => void;
+  archivedSet: Set<string>;
   themeVars: {
     panelBg2: string;
     panelBg3: string;
@@ -558,7 +579,7 @@ function PhaseFromSpaceView({
   >;
   isLight: boolean;
 }) {
-  const phases = [...doc.phases].sort((a, b) => a.order - b.order);
+  const phases = [...doc.phases].filter((p) => !archivedSet.has(p.id)).sort((a, b) => a.order - b.order);
 
   const byPhase = new Map<
     string,
@@ -639,11 +660,19 @@ function PhaseFromSpaceView({
           const meta = byPhase.get(p.id)!;
 
           return (
-            <button
+            <div
               key={p.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => onOpenPhase(p.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenPhase(p.id);
+                }
+              }}
               style={{
+                position: 'relative',
                 textAlign: 'left',
                 borderRadius: 16,
                 border: `1px solid ${themeVars.border}`,
@@ -670,8 +699,42 @@ function PhaseFromSpaceView({
                     {p.name || 'Untitled phase'}
                   </span>
                 </div>
-                <div style={{ fontWeight: 850, fontSize: 12, color: themeVars.muted }}>
-                  {meta.donePct}% · {meta.total}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 900,
+                      fontSize: 12,
+                      opacity: 0.72,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {meta.donePct}% · {meta.total}
+                  </div>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onArchivePhase(p.id);
+                    }}
+                    style={{
+                      padding: '6px 8px',
+                      borderRadius: 999,
+                      border: `1px solid ${themeVars.border}`,
+                      background: themeVars.panelBg2,
+                      cursor: 'pointer',
+                      fontWeight: 900,
+                      fontSize: 11,
+                      color: themeVars.appText,
+                      zIndex: 2,
+                    }}
+                    title="Archive phase"
+                  >
+                    Archive
+                  </button>
                 </div>
               </div>
 
@@ -735,7 +798,7 @@ function PhaseFromSpaceView({
                   <div style={{ fontSize: 12, color: themeVars.muted2 }}>No open items.</div>
                 )}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -746,18 +809,30 @@ function PhaseFromSpaceView({
 export default function App() {
   const [doc, setDoc] = useState<WorkbenchDoc>(() => loadDoc() ?? seedDoc());
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [paletteIndex, setPaletteIndex] = useState(0);
+  const suppressNewFeatureClickRef = useRef(false);
 
   useEffect(() => {
     saveTheme(theme);
   }, [theme]);
 
   const STATUS_META = useMemo(() => buildStatusMeta(theme), [theme]);
+  const STATUS_OPTIONS: Array<{ value: FeatureStatus | 'all'; label: string }> = [
+    { value: 'all', label: 'All statuses' },
+    { value: 'not_started', label: STATUS_META.not_started.label },
+    { value: 'in_progress', label: STATUS_META.in_progress.label },
+    { value: 'done', label: STATUS_META.done.label },
+    { value: 'blocked', label: STATUS_META.blocked.label },
+  ];
 
   // Filters
   const ALL_STATUSES: FeatureStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
   const [statusFilter, setStatusFilter] = useState<Set<FeatureStatus>>(() => new Set(ALL_STATUSES));
   const [phaseFilter, setPhaseFilter] = useState<string>('all');
   const [tagQuery, setTagQuery] = useState<string>('');
+  const [hideDoneByPhase, setHideDoneByPhase] = useState<Record<string, boolean>>({});
 
   // Selection
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -777,12 +852,22 @@ export default function App() {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [disableDropAnimation, setDisableDropAnimation] = useState(false);
+  type NewFeaturePlacement = { phaseId: string; index: number };
   const [statusPopover, setStatusPopover] = useState<{
     open: boolean;
     featureId: string | null;
     x: number;
     y: number;
   }>({ open: false, featureId: null, x: 0, y: 0 });
+  const [newFeaturePlacement, setNewFeaturePlacement] = useState<NewFeaturePlacement | null>(
+    null
+  );
+  const placementRafRef = useRef<number | null>(null);
+  const placementNextRef = useRef<NewFeaturePlacement | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const lastOverIdRef = useRef<string | null>(null);
+  const laneGridRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [tagPopover, setTagPopover] = useState<{
     open: boolean;
     x: number;
@@ -805,6 +890,7 @@ export default function App() {
   const [hoverPhaseId, setHoverPhaseId] = useState<string | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
   const [reducedMotion, setReducedMotion] = useState<boolean>(prefersReducedMotion);
+  const [flashId, setFlashId] = useState<string | null>(null);
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimRef = useRef<number>(0);
   const sectionRefs = useRef<Record<DocSection, HTMLElement | null>>({
@@ -823,10 +909,68 @@ export default function App() {
   const [detailsOpen, setDetailsOpen] = useState<boolean>(false);
   const [detailsId, setDetailsId] = useState<string | null>(null);
 
+  function loadArchivedPhases(): string[] {
+    try {
+      const raw = localStorage.getItem('workbench_archived_phases');
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  const [archivedPhaseIds, setArchivedPhaseIds] = useState<string[]>(() => loadArchivedPhases());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('workbench_archived_phases', JSON.stringify(archivedPhaseIds));
+    } catch {
+      // ignore
+    }
+  }, [archivedPhaseIds]);
+
+  const archivedSet = useMemo(() => new Set(archivedPhaseIds), [archivedPhaseIds]);
+
   const detailsFeature = useMemo(() => {
     if (!detailsId) return null;
     return doc.features.find((f) => f.id === detailsId) ?? null;
   }, [doc.features, detailsId]);
+
+  useEffect(() => {
+    if (activeDragId !== 'NEW_FEATURE') return;
+    const onMove = (e: PointerEvent) => {
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, [activeDragId]);
+
+  const queueNewFeaturePlacement = (next: NewFeaturePlacement | null) => {
+    placementNextRef.current = next;
+    if (placementRafRef.current != null) return;
+    placementRafRef.current = requestAnimationFrame(() => {
+      placementRafRef.current = null;
+      const queued = placementNextRef.current;
+      placementNextRef.current = null;
+      setNewFeaturePlacement((prev) => {
+        if (!queued) return prev ? null : prev;
+        if (prev && prev.phaseId === queued.phaseId && prev.index === queued.index) return prev;
+        return queued;
+      });
+    });
+  };
+
+  const clearNewFeaturePlacementQueue = () => {
+    if (placementRafRef.current != null) cancelAnimationFrame(placementRafRef.current);
+    placementRafRef.current = null;
+    placementNextRef.current = null;
+  };
+
+  type PaletteItem =
+    | { kind: 'section'; label: string; section: DocSection }
+    | { kind: 'phase'; label: string; phaseId: string }
+    | { kind: 'feature'; label: string; featureId: string; phaseId: string }
+    | { kind: 'action'; label: string; run: () => void };
 
   function SortableCard({
     feature: f,
@@ -868,12 +1012,20 @@ export default function App() {
         : isDetailsActive
           ? 'rgba(120,200,255,0.28)'
           : themeVars.borderSoft;
+    const baseBoxShadow = isDragging
+      ? '0 18px 42px rgba(0,0,0,0.38)'
+      : isDetailsActive
+        ? `${cardBase.boxShadow}, 0 0 0 1px rgba(120,200,255,0.12), 0 0 18px rgba(120,200,255,0.10)`
+        : cardBase.boxShadow;
+    const cardBoxShadow =
+      flashId === f.id ? `0 0 0 2px rgba(120,200,255,0.45), ${baseBoxShadow}` : baseBoxShadow;
     const dragStyle = {
       transform: transform ? CSS.Transform.toString(transform) : undefined,
       transition,
     };
 
     useLayoutEffect(() => {
+      if (activeDragId) return;
       if (!f.description) {
         setIsTruncated(false);
         return;
@@ -908,8 +1060,9 @@ export default function App() {
       document.body.appendChild(measurer);
       const fullHeight = measurer.getBoundingClientRect().height;
       document.body.removeChild(measurer);
-      setIsTruncated(fullHeight > clampHeight + 2);
-    }, [f.description, cardH, boardRows, CARD_W]);
+      const nextTruncated = fullHeight > clampHeight + 2;
+      setIsTruncated((prev) => (prev === nextTruncated ? prev : nextTruncated));
+    }, [f.description, cardH, boardRows, CARD_W, activeDragId]);
 
     React.useEffect(() => {
       const el = bodyElRef.current;
@@ -974,6 +1127,7 @@ export default function App() {
       <div
         ref={setNodeRef}
         data-feature-id={f.id}
+        data-feature-card-id={f.id}
         onClick={() => {
           setHoverId(null);
           setSelectedId(f.id);
@@ -1002,11 +1156,7 @@ export default function App() {
             dragStyle.transition ??
             'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 200ms ease, background 200ms ease, border-color 200ms ease',
           opacity: isDragging ? 0.6 : 1,
-          boxShadow: isDragging
-            ? '0 18px 42px rgba(0,0,0,0.38)'
-            : isDetailsActive
-              ? `${cardBase.boxShadow}, 0 0 0 1px rgba(120,200,255,0.12), 0 0 18px rgba(120,200,255,0.10)`
-              : cardBase.boxShadow,
+          boxShadow: cardBoxShadow,
         }}
       >
         <div
@@ -1392,6 +1542,35 @@ export default function App() {
     );
   }
 
+  const NewFeaturePlaceholder = () => {
+    const { setNodeRef } = useDroppable({ id: 'NEW_FEATURE' });
+    return (
+      <div
+        ref={setNodeRef}
+        style={{
+          ...cardBase,
+          width: '100%',
+          height: cardH,
+          borderStyle: 'dashed',
+          borderWidth: 2,
+          borderColor: themeVars.borderSoft,
+          background: themeVars.panelBg2,
+          boxShadow: themeVars.shadow1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: themeVars.muted,
+          fontWeight: 900,
+          fontSize: 13,
+          opacity: 0.85,
+          pointerEvents: 'none',
+        }}
+      >
+        New feature
+      </div>
+    );
+  };
+
   function PhaseLane({
     phase,
     features,
@@ -1399,9 +1578,24 @@ export default function App() {
     phase: Phase;
     features: Feature[];
   }) {
-    const laneId = laneIdForPhase(phase.id);
+    const laneId = `phase:${phase.id}`;
     const { setNodeRef, isOver } = useDroppable({ id: laneId });
-    const cols = Math.max(1, Math.ceil(Math.max(features.length, 1) / boardRows));
+    const phaseDrop = useDroppable({ id: `phase-drop:${phase.id}` });
+    const hideDone = !!hideDoneByPhase[phase.id];
+    const visibleFeatures = (hideDone ? features.filter((f) => f.status !== 'done') : features).filter(
+      (f) => f.id !== 'NEW_FEATURE'
+    );
+    const showGhost = activeDragId === 'NEW_FEATURE' && newFeaturePlacement?.phaseId === phase.id;
+    const ghostIndex = showGhost
+      ? Math.max(0, Math.min(newFeaturePlacement!.index, visibleFeatures.length))
+      : -1;
+    const visibleIds = visibleFeatures.map((f) => f.id);
+    const laneItemIds = showGhost
+      ? [...visibleIds.slice(0, ghostIndex), 'NEW_FEATURE', ...visibleIds.slice(ghostIndex)]
+      : visibleIds;
+    const visibleById = useMemo(() => new Map(visibleFeatures.map((f) => [f.id, f])), [visibleFeatures]);
+    const laneCount = showGhost ? visibleFeatures.length + 1 : visibleFeatures.length;
+    const cols = Math.max(1, Math.ceil(Math.max(laneCount, 1) / boardRows));
     const laneInnerGridW = cols * CARD_W + Math.max(0, cols - 1) * GRID_COL_GAP;
     const laneW = laneInnerGridW + 10 * 2 + 6;
     const SAFE_LIFT_PAD = 8; // enough to avoid clipping hover lift + shadow without wasting space
@@ -1409,6 +1603,7 @@ export default function App() {
 
     return (
       <div
+        ref={phaseDrop.setNodeRef}
         style={{
           width: laneW,
           minWidth: laneW,
@@ -1424,7 +1619,9 @@ export default function App() {
           borderRadius: 16,
           border: `1px solid ${themeVars.borderSoft}`,
           background: isOver ? themeVars.panelBg3 : themeVars.panelBg,
-          boxShadow: themeVars.shadow1,
+          boxShadow: phaseDrop.isOver
+            ? `0 0 0 2px rgba(120,200,255,0.35), ${themeVars.shadow1}`
+            : themeVars.shadow1,
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
         }}
@@ -1515,14 +1712,43 @@ export default function App() {
               </div>
             )}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.6 }}>
-            {features.length} item{features.length === 1 ? '' : 's'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 12, opacity: 0.6 }}>
+              {features.length} item{features.length === 1 ? '' : 's'}
+            </div>
+            {features.some((f) => f.status === 'done') && (
+              <button
+                type="button"
+                onClick={() =>
+                  setHideDoneByPhase((m) => ({ ...m, [phase.id]: !m[phase.id] }))
+                }
+                style={{
+                  padding: '6px 8px',
+                  borderRadius: 999,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontWeight: 900,
+                  fontSize: 11,
+                }}
+                title={hideDone ? 'Show done items' : 'Hide done items'}
+              >
+                {hideDone ? 'Show done' : 'Hide done'}
+              </button>
+            )}
           </div>
         </div>
 
-        <SortableContext items={features.map((f) => f.id)} strategy={rectSortingStrategy}>
+        <SortableContext
+          items={laneItemIds}
+          strategy={activeDragId === 'NEW_FEATURE' ? newFeatureSortingStrategy : rectSortingStrategy}
+        >
           <div
-            ref={setNodeRef}
+            ref={(node) => {
+              setNodeRef(node);
+              laneGridRefs.current[phase.id] = node;
+            }}
             style={{
               width: laneInnerGridW,
               maxWidth: laneInnerGridW,
@@ -1543,11 +1769,16 @@ export default function App() {
               alignItems: 'start',
             }}
           >
-            {features.map((f) => (
-              <SortableCard key={f.id} feature={f} isSelected={f.id === selectedId} />
-            ))}
+            {laneItemIds.map((id) => {
+              if (id === 'NEW_FEATURE') {
+                return <NewFeaturePlaceholder key="NEW_FEATURE" />;
+              }
+              const feature = visibleById.get(id);
+              if (!feature) return null;
+              return <SortableCard key={feature.id} feature={feature} isSelected={feature.id === selectedId} />;
+            })}
 
-            {features.length === 0 ? (
+            {visibleFeatures.length === 0 && !showGhost ? (
               <div style={{ opacity: 0.55, fontSize: 13, padding: 10 }}>Drop here</div>
             ) : null}
           </div>
@@ -1730,29 +1961,167 @@ export default function App() {
   }, []);
 
   const phasesById = useMemo(() => new Map(doc.phases.map((p) => [p.id, p])), [doc.phases]);
+  const archivedPhases = useMemo(
+    () => doc.phases.filter((p) => archivedSet.has(p.id)).sort((a, b) => a.order - b.order),
+    [doc.phases, archivedSet]
+  );
   const prdBlocksSorted = useMemo(
     () => [...prd.blocks].sort((a, b) => a.order - b.order),
     [prd.blocks]
+  );
+  const prdNonTitleBlocks = useMemo(
+    () => prdBlocksSorted.filter((b) => b.type !== 'title'),
+    [prdBlocksSorted]
   );
 
   const orderedFeatures = useMemo(() => {
     return [...doc.features].sort((a, b) => a.order - b.order);
   }, [doc.features]);
 
-  const filteredFeatures = useMemo(() => {
-    const q = tagQuery.trim().toLowerCase();
-    return orderedFeatures.filter((f) => {
-      if (!statusFilter.has(f.status)) return false;
-      if (phaseFilter !== 'all' && f.phaseId !== phaseFilter) return false;
-      if (!q) return true;
+  const filteredFeatures = useMemo(
+    () => {
+      const q = tagQuery.trim().toLowerCase();
+      return orderedFeatures.filter((f) => {
+        if (f.id === 'NEW_FEATURE') return true;
+        if (!statusFilter.has(f.status)) return false;
+        if (phaseFilter !== 'all' && f.phaseId !== phaseFilter) return false;
+        if (!q) return true;
 
-      // match tags OR title OR description (loose but useful)
-      const tagMatch = f.tags.some((t) => t.toLowerCase().includes(q));
-      const titleMatch = f.title.toLowerCase().includes(q);
-      const descMatch = f.description.toLowerCase().includes(q);
-      return tagMatch || titleMatch || descMatch;
+        // match tags OR title OR description (loose but useful)
+        const tagMatch = f.tags.some((t) => t.toLowerCase().includes(q));
+        const titleMatch = f.title.toLowerCase().includes(q);
+        const descMatch = f.description.toLowerCase().includes(q);
+        return tagMatch || titleMatch || descMatch;
+      });
+    },
+    [orderedFeatures, statusFilter, phaseFilter, tagQuery]
+  );
+
+  const isFeatureVisible = (f: Feature) => {
+    const q = tagQuery.trim().toLowerCase();
+    if (!statusFilter.has(f.status)) return false;
+    if (phaseFilter !== 'all' && f.phaseId !== phaseFilter) return false;
+    if (!q) return true;
+    const tagMatch = f.tags.some((t) => t.toLowerCase().includes(q));
+    const titleMatch = f.title.toLowerCase().includes(q);
+    const descMatch = f.description.toLowerCase().includes(q);
+    return tagMatch || titleMatch || descMatch;
+  };
+
+  const getPhaseInsertIndex = (phaseId: string) => {
+    const pointer = lastPointerRef.current;
+    const gridEl = laneGridRefs.current[phaseId];
+    if (!pointer || !gridEl) return null;
+    const rect = gridEl.getBoundingClientRect();
+    const relX = pointer.x - rect.left;
+    const relY = pointer.y - rect.top;
+    const colWidth = CARD_W + GRID_COL_GAP;
+    const rowHeight = cardH + GRID_ROW_GAP;
+
+    const hideDone = !!hideDoneByPhase[phaseId];
+    const visibleCount = [...doc.features]
+      .sort((a, b) => a.order - b.order)
+      .filter((f) => f.phaseId === phaseId)
+      .filter((f) => (hideDone ? f.status !== 'done' : true))
+      .filter(isFeatureVisible).length;
+
+    const cols = Math.max(1, Math.ceil(Math.max(visibleCount, 1) / boardRows));
+    let col = Math.floor(relX / colWidth);
+    let row = Math.floor(relY / rowHeight);
+    if (!Number.isFinite(col)) col = 0;
+    if (!Number.isFinite(row)) row = 0;
+
+    const rowOffset = relY - row * rowHeight;
+    if (rowOffset > cardH / 2) row += 1;
+
+    col = clamp(col, 0, Math.max(0, cols - 1));
+    row = clamp(row, 0, boardRows);
+
+    let index = col * boardRows + row;
+    index = Math.max(0, Math.min(index, visibleCount));
+    return index;
+  };
+
+  const paletteItems: PaletteItem[] = useMemo(() => {
+    const items: PaletteItem[] = [];
+    const visiblePhases = [...doc.phases]
+      .filter((p) => !archivedSet.has(p.id))
+      .sort((a, b) => a.order - b.order);
+
+    items.push({ kind: 'section', label: 'Go to PRD', section: 'prd' });
+    items.push({ kind: 'section', label: 'Go to Roadmap', section: 'roadmap' });
+    items.push({ kind: 'section', label: 'Go to Phases', section: 'phases' });
+
+    items.push({
+      kind: 'action',
+      label: theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode',
+      run: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
     });
-  }, [orderedFeatures, statusFilter, phaseFilter, tagQuery]);
+    items.push({ kind: 'action', label: 'Export: PRD.md', run: () => exportPrdMarkdown() });
+    items.push({ kind: 'action', label: 'Export: Roadmap.md', run: () => exportRoadmapMarkdown() });
+    items.push({
+      kind: 'action',
+      label: 'Export: workbench.json',
+      run: () => downloadText('workbench.json', JSON.stringify(doc, null, 2)),
+    });
+
+    for (const p of visiblePhases) {
+      items.push({ kind: 'phase', label: `Phase: ${p.name || 'Untitled phase'}`, phaseId: p.id });
+    }
+
+    for (const f of [...doc.features].filter((f) => !archivedSet.has(f.phaseId)).sort((a, b) => a.order - b.order)) {
+      const p = doc.phases.find((x) => x.id === f.phaseId);
+      const pTitle = p?.name || 'Untitled phase';
+      items.push({
+        kind: 'feature',
+        label: `Feature: ${f.title || '(untitled)'} — ${pTitle}`,
+        featureId: f.id,
+        phaseId: f.phaseId,
+      });
+    }
+
+    return items;
+  }, [doc, theme, archivedSet]);
+
+  const paletteFiltered = useMemo(() => {
+    const q = paletteQuery.trim().toLowerCase();
+    return q ? paletteItems.filter((it) => it.label.toLowerCase().includes(q)) : paletteItems;
+  }, [paletteItems, paletteQuery]);
+
+  const paletteShown = useMemo(() => paletteFiltered.slice(0, 12), [paletteFiltered]);
+  const paletteIndexClamped = useMemo(
+    () => Math.min(paletteIndex, Math.max(0, paletteShown.length - 1)),
+    [paletteIndex, paletteShown.length]
+  );
+
+  const runPaletteItem = React.useCallback(
+    (it: PaletteItem) => {
+      setPaletteOpen(false);
+
+      if (it.kind === 'section') {
+        scrollToSection(it.section);
+        return;
+      }
+      if (it.kind === 'phase') {
+        if (archivedSet.has(it.phaseId)) return;
+        if (!doc.phases.some((p) => p.id === it.phaseId)) return;
+        setPhaseFilter(it.phaseId);
+        scrollToSection('roadmap');
+        return;
+      }
+      if (it.kind === 'feature') {
+        if (archivedSet.has(it.phaseId)) return;
+        setPhaseFilter(it.phaseId);
+        scrollToSection('roadmap');
+        requestAnimationFrame(() => requestAnimationFrame(() => openEditor(it.featureId)));
+        return;
+      }
+      if (it.kind === 'action') {
+        it.run();
+      }
+    },
+    [openEditor, scrollToSection, setPhaseFilter, archivedSet, doc.phases]
+  );
 
   // Keep selection valid under filters
   useEffect(() => {
@@ -1764,6 +2133,61 @@ export default function App() {
 
     setSelectedId(filteredFeatures[0].id);
   }, [filteredFeatures, selectedId]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+
+      if (!paletteOpen) return;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setPaletteOpen(false);
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setPaletteIndex((i) => i + 1);
+        return;
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setPaletteIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true } as any);
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    setPaletteQuery('');
+    setPaletteIndex(0);
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    const onEnter = (e: KeyboardEvent) => {
+      if (!paletteOpen) return;
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const it = paletteShown[paletteIndexClamped];
+      if (it) runPaletteItem(it);
+    };
+    window.addEventListener('keydown', onEnter, { capture: true });
+    return () => window.removeEventListener('keydown', onEnter, { capture: true } as any);
+  }, [paletteOpen, paletteQuery, paletteIndex, paletteShown, paletteIndexClamped, runPaletteItem]);
 
   // Keyboard controls
   useEffect(() => {
@@ -1825,11 +2249,19 @@ export default function App() {
     });
   }
 
+  function scrollToFeatureCard(id: string) {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-feature-card-id="${id}"]`) as HTMLElement | null;
+      el?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+  }
+
 function createFeatureAtEnd() {
+  const newId = uid('feat');
   setDoc((prev) => {
     const phaseId = firstPhaseId(prev.phases);
     const f: Feature = {
-      id: uid('feat'),
+      id: newId,
       title: 'New feature',
       description: '',
       status: 'not_started',
@@ -1841,6 +2273,63 @@ function createFeatureAtEnd() {
     };
     return { ...prev, features: [...prev.features, f] };
   });
+  scrollToFeatureCard(newId);
+  setFlashId(newId);
+  setTimeout(() => setFlashId((v) => (v === newId ? null : v)), 900);
+}
+
+function NewFeatureButton() {
+  const drag = useDraggable({ id: 'NEW_FEATURE' });
+
+  return (
+    <button
+      ref={drag.setNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      onClick={() => {
+        if (suppressNewFeatureClickRef.current) {
+          suppressNewFeatureClickRef.current = false;
+          return;
+        }
+        createFeatureAtEnd();
+      }}
+      style={{
+        ...buttonStyle,
+        ...(drag.isDragging ? { opacity: 0.8 } : null),
+        touchAction: 'none',
+      }}
+      title="N"
+    >
+      + New
+    </button>
+  );
+}
+
+function addTemplate(kind: 'mvp' | 'bugs' | 'personal') {
+  // Use existing phases; fallback to first phase
+  const firstPhase = doc.phases[0]?.id;
+  if (!firstPhase) return;
+
+  const mk = (title: string, status: FeatureStatus = 'not_started') => ({
+    id: uid('feat'),
+    phaseId: firstPhase,
+    title,
+    description: '',
+    status,
+    tags: [],
+    order: now(),
+    createdAt: now(),
+    updatedAt: now(),
+  });
+
+  const items =
+    kind === 'mvp'
+      ? [mk('Feature list MVP'), mk('Keyboard shortcuts'), mk('Export: Markdown + JSON', 'in_progress')]
+      : kind === 'bugs'
+        ? [mk('Fix top UI papercuts', 'in_progress'), mk('Clean up dead code'), mk('QA pass + ship')]
+        : [mk('Define goal + constraints'), mk('Build smallest loop'), mk('Polish + ship', 'in_progress')];
+
+  setDoc((prev) => ({ ...prev, features: [...prev.features, ...items] }));
 }
 
 function deleteFeature(id: string) {
@@ -1948,6 +2437,54 @@ function beginInlinePhaseEdit(id: string, current: string) {
     setDetailsId(null);
   };
 
+  function exportPrdMarkdown() {
+    const blocks = [...prd.blocks].sort((a, b) => a.order - b.order);
+    const lines: string[] = [];
+    const docTitle = doc.title?.trim() || 'PRD';
+    lines.push(`# ${docTitle}`);
+    lines.push('');
+    for (const b of blocks) {
+      if (b.type === 'title') continue;
+      lines.push(`## ${b.label || 'Section'}`);
+      lines.push('');
+      if (b.value?.trim()) lines.push(b.value.trim());
+      lines.push('');
+    }
+    downloadText('PRD.md', lines.join('\n'));
+  }
+
+  function exportRoadmapMarkdown() {
+    const phases = [...doc.phases].sort((a, b) => a.order - b.order);
+    const feats = [...doc.features].sort((a, b) => a.order - b.order);
+
+    const lines: string[] = [];
+    const docTitle = doc.title?.trim() || 'Workbench';
+    lines.push(`# Roadmap — ${docTitle}`);
+    lines.push('');
+
+    for (const p of phases) {
+      const items = feats.filter((f) => f.phaseId === p.id);
+      lines.push(`## ${p.name || 'Untitled phase'}`);
+      lines.push('');
+      if (!items.length) {
+        lines.push(`- (no features)`);
+        lines.push('');
+        continue;
+      }
+      for (const f of items) {
+        const status = STATUS_META[f.status]?.label ?? f.status;
+        lines.push(`- [${status}] ${f.title || '(untitled)'}`);
+        if (f.description?.trim()) {
+          const desc = f.description.trim().replace(/\n/g, '\n  ');
+          lines.push(`  ${desc}`);
+        }
+      }
+      lines.push('');
+    }
+
+    downloadText('Roadmap.md', lines.join('\n'));
+  }
+
   const prdCmd = (cmd: string, val?: string) => {
     const el = prdActiveRef.current;
     if (!el) return;
@@ -1982,11 +2519,11 @@ function cancelInlinePhaseEdit() {
     }));
   }
 
-  function addPrdBlockAfter(afterId: string) {
-    setPrd((prev) => {
-      const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
-      const idx = blocks.findIndex((b) => b.id === afterId);
-      const insertAt = idx === -1 ? blocks.length : idx + 1;
+function addPrdBlockAfter(afterId: string) {
+  setPrd((prev) => {
+    const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
+    const idx = blocks.findIndex((b) => b.id === afterId);
+    const insertAt = idx === -1 ? blocks.length : idx + 1;
 
       const newBlock: PrdBlock = {
         id: uid('prd'),
@@ -1997,13 +2534,29 @@ function cancelInlinePhaseEdit() {
       };
 
       blocks.splice(insertAt, 0, newBlock);
-      return normalizePrd({ ...prev, blocks });
-    });
-  }
+    return normalizePrd({ ...prev, blocks });
+  });
+}
 
-  function deletePrdBlock(id: string) {
-    setPrd((prev) => normalizePrd({ ...prev, blocks: prev.blocks.filter((b) => b.id !== id) }));
-  }
+function addPrdBlock(title: string) {
+  setPrd((prev) => ({
+    ...prev,
+    blocks: [
+      ...prev.blocks,
+      {
+        id: uid('prd'),
+        type: 'notes',
+        label: title,
+        value: '',
+        order: now(),
+      },
+    ],
+  }));
+}
+
+function deletePrdBlock(id: string) {
+  setPrd((prev) => normalizePrd({ ...prev, blocks: prev.blocks.filter((b) => b.id !== id) }));
+}
 
   function renamePrdBlock(id: string, label: string) {
     setPrd((prev) => ({
@@ -2167,6 +2720,7 @@ useEffect(() => {
     if (!root) return;
 
     if (!activeDragId) return;
+    if (activeDragId === 'NEW_FEATURE') return;
 
     const prevOverflowY = root.style.overflowY;
     root.style.overflowY = 'hidden';
@@ -2507,6 +3061,7 @@ useEffect(() => {
     fontWeight: 700,
     cursor: 'pointer',
   };
+  const noStatusSelected = statusFilter.size === 0;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const shellStyle: React.CSSProperties = {
     height: '100vh',
@@ -2567,10 +3122,19 @@ useEffect(() => {
     scrollSnapAlign: 'start',
     scrollSnapStop: 'always',
   };
+  const roadmapSectionStyle: React.CSSProperties = { ...sectionStyle, padding: 0 };
   const PRD_COL_W = 520;
   const PRD_COL_GAP = 24;
   const PRD_BODY_SIZE = 16;
   const PRD_LINE = 1.6;
+
+  const prdLabelStyle: React.CSSProperties = {
+    fontSize: 12,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    opacity: 0.62,
+    fontWeight: 800,
+  };
 
   const prdBodyStyle: React.CSSProperties = {
     fontSize: PRD_BODY_SIZE,
@@ -2630,7 +3194,7 @@ useEffect(() => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 0.2 }}>Workbench</div>
           <div style={{ fontSize: 12, opacity: 0.65 }}>
-            Local-first • {doc.features.length} feature{doc.features.length === 1 ? '' : 's'}
+            v{APP_VERSION} • Local-first • {doc.features.length} feature{doc.features.length === 1 ? '' : 's'}
           </div>
         </div>
 
@@ -2640,12 +3204,34 @@ useEffect(() => {
               key={key}
               type="button"
               style={navBtn(activeSection === key)}
-              onClick={() => scrollToSection(key)}
+              onClick={() => {
+                if (activeDragId === 'NEW_FEATURE') return;
+                scrollToSection(key);
+              }}
             >
               {SECTION_LABELS[key]}
             </button>
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          style={{
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: `1px solid ${themeVars.border}`,
+            background: themeVars.panelBg2,
+            color: 'inherit',
+            cursor: 'pointer',
+            fontWeight: 900,
+            fontSize: 12,
+            textAlign: 'left',
+          }}
+          title="Search & jump (⌘K / Ctrl+K)"
+        >
+          Search / Jump <span style={{ opacity: 0.6, fontWeight: 800 }}>(⌘K)</span>
+        </button>
 
         <div style={{ height: 1, background: themeVars.divider, margin: '6px 0' }} />
 
@@ -2756,6 +3342,35 @@ useEffect(() => {
               </button>
             </div>
           </div>
+
+          {prdNonTitleBlocks.length === 0 && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 14,
+                borderRadius: 16,
+                border: `1px solid ${themeVars.border}`,
+                background: themeVars.panelBg2,
+                boxShadow: themeVars.shadow1,
+              }}
+            >
+              <div style={{ fontWeight: 950, opacity: 0.92 }}>No PRD sections yet.</div>
+              <div style={{ marginTop: 6, color: themeVars.muted, fontWeight: 800 }}>
+                Start with a title, then outline constraints and the MVP.
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                <button type="button" onClick={() => addPrdBlock('Constraints')} style={buttonStyle}>
+                  Add “Constraints”
+                </button>
+                <button type="button" onClick={() => addPrdBlock('MVP')} style={buttonStyle}>
+                  Add “MVP”
+                </button>
+                <button type="button" onClick={() => addPrdBlock('Out of scope')} style={buttonStyle}>
+                  Add “Out of scope”
+                </button>
+              </div>
+            </div>
+          )}
 
           <div
             data-no-snap
@@ -3106,7 +3721,7 @@ useEffect(() => {
           ref={(el) => {
             sectionRefs.current.roadmap = el;
           }}
-          style={sectionStyle}
+          style={roadmapSectionStyle}
         >
           <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
             <div
@@ -3117,7 +3732,287 @@ useEffect(() => {
                 openCtxMenu(e, { kind: 'background' });
               }}
             >
-              <div style={{ flex: '0 0 auto' }}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                autoScroll={activeDragId !== 'NEW_FEATURE'}
+                onDragStart={(event: DragStartEvent) => {
+                  closeTagPopover();
+                  const activeId = String(event.active.id);
+                  setActiveDragId(activeId);
+                  if (activeId === 'NEW_FEATURE') {
+                    setDisableDropAnimation(true);
+                    suppressNewFeatureClickRef.current = true;
+                    lastOverIdRef.current = null;
+                    clearNewFeaturePlacementQueue();
+                    setNewFeaturePlacement(null);
+                  }
+                }}
+                onDragOver={(event: DragOverEvent) => {
+                  const activeId = String(event.active.id);
+                  if (activeId !== 'NEW_FEATURE') return;
+                  const over = event.over;
+                  if (!over) {
+                    queueNewFeaturePlacement(null);
+                    return;
+                  }
+                  const rawOverId = String(over.id);
+                  const overId = rawOverId === 'NEW_FEATURE' ? lastOverIdRef.current : rawOverId;
+                  if (!overId) {
+                    queueNewFeaturePlacement(null);
+                    return;
+                  }
+                  if (rawOverId !== 'NEW_FEATURE') lastOverIdRef.current = rawOverId;
+                  let phaseId: string | null = null;
+                  let index: number | null = null;
+
+                  if (overId.startsWith('phase-drop:')) {
+                    phaseId = overId.split(':')[1] ?? null;
+                  } else if (isLaneId(overId)) {
+                    phaseId = phaseIdFromLaneId(overId);
+                  } else {
+                    const overFeat = doc.features.find((f) => f.id === overId);
+                    phaseId = overFeat?.phaseId ?? null;
+                    if (phaseId) {
+                      const hideDone = !!hideDoneByPhase[phaseId];
+                      const visibleIds = [...doc.features]
+                        .sort((a, b) => a.order - b.order)
+                        .filter((f) => f.phaseId === phaseId)
+                        .filter((f) => (hideDone ? f.status !== 'done' : true))
+                        .filter(isFeatureVisible)
+                        .map((f) => f.id);
+
+                      const overIndex = visibleIds.indexOf(overId);
+                      if (overIndex !== -1) {
+                        const pointer = lastPointerRef.current;
+                        const overEl = document.querySelector(
+                          `[data-feature-card-id="${overId}"]`
+                        ) as HTMLElement | null;
+                        if (pointer && overEl) {
+                          const rect = overEl.getBoundingClientRect();
+                          index =
+                            pointer.y < rect.top + rect.height / 2 ? overIndex : overIndex + 1;
+                        } else {
+                          index = overIndex;
+                        }
+                        index = Math.max(0, Math.min(index, visibleIds.length));
+                      }
+                    }
+                  }
+
+                  if (!phaseId) {
+                    queueNewFeaturePlacement(null);
+                    return;
+                  }
+
+                  if (index == null) {
+                    const pointerIndex = getPhaseInsertIndex(phaseId);
+                    if (pointerIndex != null) {
+                      index = pointerIndex;
+                    } else {
+                      const hideDone = !!hideDoneByPhase[phaseId];
+                      const visibleCount = [...doc.features]
+                        .sort((a, b) => a.order - b.order)
+                        .filter((f) => f.phaseId === phaseId)
+                        .filter((f) => (hideDone ? f.status !== 'done' : true))
+                        .filter(isFeatureVisible).length;
+                      index = visibleCount;
+                    }
+                  }
+
+                  queueNewFeaturePlacement({ phaseId, index });
+                }}
+                onDragCancel={(event: DragCancelEvent) => {
+                  setActiveDragId(null);
+                  clearNewFeaturePlacementQueue();
+                  setNewFeaturePlacement(null);
+                  if (String(event.active.id) === 'NEW_FEATURE') {
+                    setTimeout(() => setDisableDropAnimation(false), 0);
+                    lastOverIdRef.current = null;
+                  }
+                  setTimeout(() => {
+                    suppressNewFeatureClickRef.current = false;
+                  }, 0);
+                }}
+                onDragEnd={(event: DragEndEvent) => {
+                  const { active, over } = event;
+                  const activeId = String(active.id);
+                  setActiveDragId(null);
+                  const placement = placementNextRef.current ?? newFeaturePlacement;
+                  clearNewFeaturePlacementQueue();
+                  setNewFeaturePlacement(null);
+                  if (activeId === 'NEW_FEATURE') {
+                    setTimeout(() => setDisableDropAnimation(false), 0);
+                    lastOverIdRef.current = null;
+                  }
+                  setTimeout(() => {
+                    suppressNewFeatureClickRef.current = false;
+                  }, 0);
+
+                  if (activeId === 'NEW_FEATURE') {
+                    if (!over || !placement) return;
+                    const { phaseId, index } = placement;
+                    const newId = uid('feat');
+                    setDoc((prev) => {
+                      const newFeature: Feature = {
+                        id: newId,
+                        title: 'New feature',
+                        description: '',
+                        status: 'not_started',
+                        phaseId,
+                        tags: [],
+                        order: nextOrder(prev),
+                        createdAt: now(),
+                        updatedAt: now(),
+                      };
+
+                      const nextAll = [...prev.features, newFeature].sort((a, b) => a.order - b.order);
+                      const visibleByPhase = new Map<string, string[]>();
+                      for (const p of prev.phases) visibleByPhase.set(p.id, []);
+
+                      for (const f of nextAll) {
+                        if (f.id === newId) continue;
+                        const hideDone = !!hideDoneByPhase[f.phaseId];
+                        if (hideDone && f.status === 'done') continue;
+                        if (!isFeatureVisible(f)) continue;
+                        const arr = visibleByPhase.get(f.phaseId) ?? [];
+                        arr.push(f.id);
+                        visibleByPhase.set(f.phaseId, arr);
+                      }
+
+                      const target = [...(visibleByPhase.get(phaseId) ?? [])];
+                      const safeIndex = Math.max(0, Math.min(index, target.length));
+                      target.splice(safeIndex, 0, newId);
+                      visibleByPhase.set(phaseId, target);
+
+                      const byId = new Map(nextAll.map((f) => [f.id, f]));
+                      const nextFeatures: Feature[] = [];
+                      const phasesOrdered = [...prev.phases].sort((a, b) => a.order - b.order);
+                      for (const ph of phasesOrdered) {
+                        const visIds = visibleByPhase.get(ph.id) ?? [];
+                        const visSet = new Set(visIds);
+                        const vis = visIds.map((id) => byId.get(id)).filter(Boolean) as Feature[];
+                        const nonVis = nextAll
+                          .filter((f) => f.phaseId === ph.id && !visSet.has(f.id))
+                          .sort((a, b) => a.order - b.order);
+                        nextFeatures.push(...vis, ...nonVis);
+                      }
+
+                      const seen = new Set<string>();
+                      const uniqueNext = nextFeatures.filter((f) => {
+                        if (seen.has(f.id)) return false;
+                        seen.add(f.id);
+                        return true;
+                      });
+
+                      const normalized = uniqueNext.map((f, idx) => ({
+                        ...f,
+                        order: idx + 1,
+                      }));
+
+                      return { ...prev, features: normalized };
+                    });
+                    scrollToFeatureCard(newId);
+                    setFlashId(newId);
+                    setTimeout(() => setFlashId((v) => (v === newId ? null : v)), 900);
+                    return;
+                  }
+
+                  if (!over) return;
+                  const overId = String(over.id);
+                  if (activeId === overId) return;
+
+                  setDoc((prev) => {
+                    const activeFeat = prev.features.find((f) => f.id === activeId);
+                    if (!activeFeat) return prev;
+
+                    let destPhaseIdMaybe: string | null = null;
+                    if (isLaneId(overId)) {
+                      const pid = phaseIdFromLaneId(overId);
+                      destPhaseIdMaybe = pid ?? null;
+                    } else {
+                      const overFeat = prev.features.find((f) => f.id === overId);
+                      destPhaseIdMaybe = overFeat?.phaseId ?? null;
+                    }
+                    const sourcePhaseIdMaybe = activeFeat.phaseId ?? null;
+                    if (!sourcePhaseIdMaybe || !destPhaseIdMaybe) return prev;
+
+                    const sourcePhaseId = sourcePhaseIdMaybe;
+                    const destPhaseId = destPhaseIdMaybe;
+                    const movingAcross = sourcePhaseId !== destPhaseId;
+                    const activeFeatNext = movingAcross
+                      ? { ...activeFeat, phaseId: destPhaseId, updatedAt: now() }
+                      : activeFeat;
+
+                    const visible = filteredFeatures;
+                    const visibleByPhase = new Map<string, string[]>();
+                    for (const p of prev.phases) visibleByPhase.set(p.id, []);
+                    for (const f of visible) {
+                      const arr = visibleByPhase.get(f.phaseId) ?? [];
+                      arr.push(f.id);
+                      visibleByPhase.set(f.phaseId, arr);
+                    }
+
+                    const srcVisibleIds = [...(visibleByPhase.get(sourcePhaseId) ?? [])];
+                    const dstVisibleIds = [...(visibleByPhase.get(destPhaseId) ?? [])];
+
+                    const srcIdx = srcVisibleIds.indexOf(activeId);
+                    if (srcIdx !== -1) srcVisibleIds.splice(srcIdx, 1);
+
+                    if (sourcePhaseId === destPhaseId) {
+                      const oldIndex = dstVisibleIds.indexOf(activeId);
+                      const newIndex = dstVisibleIds.indexOf(overId);
+                      if (oldIndex === -1 || newIndex === -1) return prev;
+
+                      const nextIds = arrayMove(dstVisibleIds, oldIndex, newIndex);
+                      visibleByPhase.set(destPhaseId, nextIds);
+                    } else {
+                      let insertAt = dstVisibleIds.length;
+                      if (!isLaneId(overId)) {
+                        const overIndex = dstVisibleIds.indexOf(overId);
+                        if (overIndex !== -1) insertAt = overIndex;
+                      }
+                      dstVisibleIds.splice(insertAt, 0, activeId);
+                      visibleByPhase.set(sourcePhaseId, srcVisibleIds);
+                      visibleByPhase.set(destPhaseId, dstVisibleIds);
+                    }
+
+                    const byId = new Map(prev.features.map((f) => [f.id, f]));
+                    byId.set(activeId, activeFeatNext);
+                    const nextFeatures: Feature[] = [];
+
+                    const phasesOrdered = [...prev.phases].sort((a, b) => a.order - b.order);
+                    for (const ph of phasesOrdered) {
+                      const visIds = visibleByPhase.get(ph.id) ?? [];
+                      const visSet = new Set(visIds);
+
+                      const vis = visIds.map((id) => byId.get(id)).filter(Boolean) as Feature[];
+
+                      const nonVis = prev.features
+                        .filter((f) => f.id !== activeId)
+                        .filter((f) => f.phaseId === ph.id && !visSet.has(f.id))
+                        .sort((a, b) => a.order - b.order);
+
+                      nextFeatures.push(...vis, ...nonVis);
+                    }
+
+                    const seen = new Set<string>();
+                    const uniqueNext = nextFeatures.filter((f) => {
+                      if (seen.has(f.id)) return false;
+                      seen.add(f.id);
+                      return true;
+                    });
+
+                    const normalized = uniqueNext.map((f, idx) => ({
+                      ...f,
+                      order: idx + 1,
+                    }));
+
+                    return { ...prev, features: normalized };
+                  });
+                }}
+              >
+                <div style={{ flex: '0 0 auto', padding: '14px 14px 0' }}>
                 <div style={toolbarStyle}>
                   <div
                     style={{
@@ -3144,6 +4039,7 @@ useEffect(() => {
                     <option value="all">All phases</option>
                     {[...doc.phases]
                       .sort((a, b) => a.order - b.order)
+                      .filter((p) => !archivedSet.has(p.id))
                       .map((p) => {
                         const label = p.name.length > 28 ? `${p.name.slice(0, 27)}…` : p.name;
                         return (
@@ -3168,10 +4064,52 @@ useEffect(() => {
                     {doc.features.length} feature{doc.features.length === 1 ? '' : 's'} • autosaved
                   </div>
 
-                  <button onClick={createFeatureAtEnd} style={buttonStyle} title="N">
-                    + New
-                  </button>
+                  <NewFeatureButton />
                 </div>
+
+                {doc.features.length === 0 && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: 14,
+                      borderRadius: 16,
+                      border: `1px solid ${themeVars.border}`,
+                      background: themeVars.panelBg2,
+                      boxShadow: themeVars.shadow1,
+                    }}
+                  >
+                    <div style={{ fontWeight: 950, opacity: 0.92 }}>No features yet.</div>
+                    <div style={{ marginTop: 6, color: themeVars.muted, fontWeight: 800 }}>
+                      Add a starter set so the board isn’t an empty universe.
+                    </div>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                      {[
+                        { label: 'Starter MVP', kind: 'mvp' },
+                        { label: 'Bug-fix Sprint', kind: 'bugs' },
+                        { label: 'Personal Project', kind: 'personal' },
+                      ].map((t) => (
+                        <button
+                          key={t.kind}
+                          type="button"
+                          onClick={() => addTemplate(t.kind as 'mvp' | 'bugs' | 'personal')}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 12,
+                            border: `1px solid ${themeVars.border}`,
+                            background: themeVars.panelBg3,
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            fontWeight: 900,
+                            fontSize: 12,
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div
@@ -3195,126 +4133,25 @@ useEffect(() => {
                     border: 'none',
                     borderRadius: 0,
                     padding: 0,
-                    paddingBottom: BOARD_PAD_BOTTOM,
+                    paddingBottom: 0,
                     boxSizing: 'border-box',
                   }}
                   ref={boardRef}
                 >
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragStart={(event: DragStartEvent) => {
-                      closeTagPopover();
-                      setActiveDragId(String(event.active.id));
-                    }}
-                    onDragCancel={(_event: DragCancelEvent) => setActiveDragId(null)}
-                    onDragEnd={(event: DragEndEvent) => {
-                      const { active, over } = event;
-                      setActiveDragId(null);
-                      if (!over) return;
-                      const activeId = String(active.id);
-                      const overId = String(over.id);
-                      if (activeId === overId) return;
-
-                      setDoc((prev) => {
-                        const activeFeat = prev.features.find((f) => f.id === activeId);
-                        if (!activeFeat) return prev;
-
-                        let destPhaseId: string | null = null;
-                        if (isLaneId(overId)) {
-                          destPhaseId = phaseIdFromLaneId(overId);
-                        } else {
-                          const overFeat = prev.features.find((f) => f.id === overId);
-                          destPhaseId = overFeat?.phaseId ?? null;
-                        }
-                        if (!destPhaseId) return prev;
-
-                        const sourcePhaseId = activeFeat.phaseId;
-                        const movingAcross = sourcePhaseId !== destPhaseId;
-                        const activeFeatNext = movingAcross
-                          ? { ...activeFeat, phaseId: destPhaseId, updatedAt: now() }
-                          : activeFeat;
-
-                        const visible = filteredFeatures;
-                        const visibleByPhase = new Map<string, string[]>();
-                        for (const p of prev.phases) visibleByPhase.set(p.id, []);
-                        for (const f of visible) {
-                          const arr = visibleByPhase.get(f.phaseId) ?? [];
-                          arr.push(f.id);
-                          visibleByPhase.set(f.phaseId, arr);
-                        }
-
-                        const srcVisibleIds = [...(visibleByPhase.get(sourcePhaseId) ?? [])];
-                        const dstVisibleIds = [...(visibleByPhase.get(destPhaseId) ?? [])];
-
-                        const srcIdx = srcVisibleIds.indexOf(activeId);
-                        if (srcIdx !== -1) srcVisibleIds.splice(srcIdx, 1);
-
-                        if (sourcePhaseId === destPhaseId) {
-                          const oldIndex = dstVisibleIds.indexOf(activeId);
-                          const newIndex = dstVisibleIds.indexOf(overId);
-                          if (oldIndex === -1 || newIndex === -1) return prev;
-
-                          const nextIds = arrayMove(dstVisibleIds, oldIndex, newIndex);
-                          visibleByPhase.set(destPhaseId, nextIds);
-                        } else {
-                          let insertAt = dstVisibleIds.length;
-                          if (!isLaneId(overId)) {
-                            const overIndex = dstVisibleIds.indexOf(overId);
-                            if (overIndex !== -1) insertAt = overIndex;
-                          }
-                          dstVisibleIds.splice(insertAt, 0, activeId);
-                          visibleByPhase.set(sourcePhaseId, srcVisibleIds);
-                          visibleByPhase.set(destPhaseId, dstVisibleIds);
-                        }
-
-                        const byId = new Map(prev.features.map((f) => [f.id, f]));
-                        byId.set(activeId, activeFeatNext);
-                        const nextFeatures: Feature[] = [];
-
-                        const phasesOrdered = [...prev.phases].sort((a, b) => a.order - b.order);
-                        for (const ph of phasesOrdered) {
-                          const visIds = visibleByPhase.get(ph.id) ?? [];
-                          const visSet = new Set(visIds);
-
-                          const vis = visIds.map((id) => byId.get(id)).filter(Boolean) as Feature[];
-
-                          const nonVis = prev.features
-                            .filter((f) => f.id !== activeId)
-                            .filter((f) => f.phaseId === ph.id && !visSet.has(f.id))
-                            .sort((a, b) => a.order - b.order);
-
-                          nextFeatures.push(...vis, ...nonVis);
-                        }
-
-                        const seen = new Set<string>();
-                        const uniqueNext = nextFeatures.filter((f) => {
-                          if (seen.has(f.id)) return false;
-                          seen.add(f.id);
-                          return true;
-                        });
-
-                        const normalized = uniqueNext.map((f, idx) => ({
-                          ...f,
-                          order: idx + 1,
-                        }));
-
-                        return { ...prev, features: normalized };
-                      });
-                    }}
-                  >
                     <div
                       style={{
                         height: '100%',
                         width: 'max-content',
                         display: 'flex',
                         gap: 16,
-                        paddingRight: 12,
+                        paddingLeft: 14,
+                        paddingRight: 14,
                         overflow: 'hidden',
                       }}
                     >
                       {[...doc.phases]
                         .sort((a, b) => a.order - b.order)
+                        .filter((p) => !archivedSet.has(p.id))
                         .filter((p) => phaseFilter === 'all' || p.id === phaseFilter)
                         .map((p) => {
                           const inLane = filteredFeatures.filter((f) => f.phaseId === p.id);
@@ -3356,33 +4193,50 @@ useEffect(() => {
                         </div>
                       </button>
                     </div>
-                    <DragOverlay>
+                    <DragOverlay dropAnimation={disableDropAnimation ? null : undefined}>
                       {activeDragId
-                        ? (() => {
-                            const activeFeature = doc.features.find((x) => x.id === activeDragId);
-                            if (!activeFeature) return null;
-                            return (
+                        ? activeDragId === 'NEW_FEATURE'
+                          ? (
                               <div
                                 style={{
-                                  ...cardBase,
-                                  width: CARD_W,
-                                  boxShadow: '0 20px 55px rgba(0,0,0,0.55)',
-                                  transform: 'scale(1.02)',
-                                  opacity: 0.98,
-                                  pointerEvents: 'none',
+                                  padding: '10px 12px',
+                                  borderRadius: 12,
+                                  border: `1px solid ${themeVars.border}`,
+                                  background: themeVars.panelBg2,
+                                  boxShadow: themeVars.shadowPop,
+                                  color: themeVars.appText,
+                                  fontWeight: 900,
+                                  fontSize: 12,
                                 }}
                               >
-                                <CardPreview feature={activeFeature} isSelected={activeFeature.id === selectedId} />
+                                New feature
                               </div>
-                            );
-                          })()
+                            )
+                          : (() => {
+                              const activeFeature = doc.features.find((x) => x.id === activeDragId);
+                              if (!activeFeature) return null;
+                              return (
+                                <div
+                                  style={{
+                                    ...cardBase,
+                                    width: CARD_W,
+                                    boxShadow: '0 20px 55px rgba(0,0,0,0.55)',
+                                    transform: 'scale(1.02)',
+                                    opacity: 0.98,
+                                    pointerEvents: 'none',
+                                  }}
+                                >
+                                  <CardPreview feature={activeFeature} isSelected={activeFeature.id === selectedId} />
+                                </div>
+                              );
+                            })()
                         : null}
                     </DragOverlay>
-                  </DndContext>
                 </div>
 
                 {detailsOpen && detailsFeature ? <FeatureDetailsPanel feature={detailsFeature} /> : null}
               </div>
+            </DndContext>
             </div>
           </div>
         </section>
@@ -3420,13 +4274,174 @@ useEffect(() => {
                 setPhaseFilter(phaseId);
                 scrollToSection('roadmap');
               }}
+              onArchivePhase={(phaseId) => {
+                setArchivedPhaseIds((prev) => (prev.includes(phaseId) ? prev : [...prev, phaseId]));
+              }}
+              archivedSet={archivedSet}
               themeVars={themeVars}
               statusMeta={STATUS_META}
               isLight={isLight}
             />
+            {archivedPhases.length ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: `1px solid ${themeVars.divider}`,
+                  display: 'grid',
+                  gap: 10,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 0.2, color: themeVars.muted }}>
+                  Archived phases
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {archivedPhases.map((p) => (
+                    <div
+                      key={p.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10,
+                        padding: '8px 10px',
+                        borderRadius: 12,
+                        border: `1px solid ${themeVars.border}`,
+                        background: themeVars.panelBg2,
+                      }}
+                    >
+                      <div style={{ fontWeight: 850, fontSize: 13, color: themeVars.appText, minWidth: 0 }}>
+                        <span
+                          style={{
+                            display: 'block',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {p.name || 'Untitled phase'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setArchivedPhaseIds((prev) => prev.filter((id) => id !== p.id));
+                        }}
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 999,
+                          border: `1px solid ${themeVars.border}`,
+                          background: themeVars.panelBg2,
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          fontWeight: 900,
+                          fontSize: 11,
+                          flexShrink: 0,
+                        }}
+                        title="Unarchive phase"
+                      >
+                        Unarchive
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
       </main>
+      {paletteOpen && (
+        <div
+          onMouseDown={() => setPaletteOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: themeVars.overlay,
+            display: 'grid',
+            placeItems: 'start center',
+            paddingTop: 90,
+            zIndex: 9999,
+          }}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(820px, calc(100vw - 56px))',
+              borderRadius: 18,
+              border: `1px solid ${themeVars.border}`,
+              background: themeVars.panelBgStrong,
+              boxShadow: themeVars.shadowPop,
+              padding: 14,
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ padding: 12, borderBottom: `1px solid ${themeVars.divider}` }}>
+              <input
+                autoFocus
+                value={paletteQuery}
+                onChange={(e) => {
+                  setPaletteQuery(e.target.value);
+                  setPaletteIndex(0);
+                }}
+                placeholder="Search… (phases, features, actions)"
+                style={{
+                  width: '100%',
+                  padding: '12px 12px',
+                  borderRadius: 12,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.inputBg2,
+                  color: 'inherit',
+                  outline: 'none',
+                  fontWeight: 850,
+                  fontSize: 13,
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: 10, maxHeight: 420, overflowY: 'auto', padding: '6px 0' }}>
+              {paletteShown.length === 0 ? (
+                <div style={{ padding: 14, color: themeVars.muted, fontWeight: 800 }}>No matches.</div>
+              ) : (
+                paletteShown.map((it, i) => (
+                  <React.Fragment key={`${it.kind}:${it.label}:${i}`}>
+                    {i > 0 ? (
+                      <div style={{ margin: '0 14px', height: 1, background: themeVars.divider }} />
+                    ) : null}
+                    <div
+                      onMouseEnter={() => setPaletteIndex(i)}
+                      onMouseDown={() => runPaletteItem(it)}
+                      style={{
+                        padding: '10px 14px',
+                        cursor: 'pointer',
+                        background: i === paletteIndexClamped ? themeVars.panelBg3 : 'transparent',
+                        borderRadius: 12,
+                        fontWeight: 850,
+                        fontSize: 13,
+                      }}
+                    >
+                      <div style={{ opacity: 0.92 }}>{it.label}</div>
+                      <div style={{ fontSize: 11, color: themeVars.muted }}>
+                        {it.kind === 'action'
+                          ? 'Action'
+                          : it.kind === 'section'
+                            ? 'Section'
+                            : it.kind === 'phase'
+                              ? 'Phase'
+                              : 'Feature'}
+                      </div>
+                    </div>
+                  </React.Fragment>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {statusPopover.open && statusPopover.featureId ? (
         <div
           onClick={() => closeStatusPopover()}
