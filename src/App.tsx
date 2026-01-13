@@ -4,6 +4,7 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
+  type DragMoveEvent,
   type DragOverEvent,
   useDraggable,
   useDroppable,
@@ -27,23 +28,24 @@ const now = () => Date.now();
 function seedDoc(): WorkbenchDoc {
   const phase1 = { id: uid('phase'), name: 'Phase 1', order: 1 };
   const phase2 = { id: uid('phase'), name: 'Phase 2', order: 2 };
+  const phase3 = { id: uid('phase'), name: 'Phase 3', order: 3 };
 
   const features: Feature[] = [
     {
       id: uid('feat'),
-      title: 'Feature list MVP',
-      description: 'Render features, filter, reorder, quick edit.',
+      title: 'Feature 1',
+      description: 'Establish the basic workflow for users.',
       status: 'in_progress',
       phaseId: phase1.id,
-      tags: ['core', 'mvp'],
+      tags: ['core'],
       order: 1,
       createdAt: now(),
       updatedAt: now(),
     },
     {
       id: uid('feat'),
-      title: 'Keyboard shortcuts',
-      description: 'CMD+N new, CMD+E edit, arrows to select.',
+      title: 'Feature 2',
+      description: 'Improve the primary navigation and layout.',
       status: 'not_started',
       phaseId: phase1.id,
       tags: ['ux'],
@@ -53,18 +55,84 @@ function seedDoc(): WorkbenchDoc {
     },
     {
       id: uid('feat'),
-      title: 'Phase “from space” view',
-      description: 'Read-only grouped overview by phase.',
+      title: 'Feature 3',
+      description: 'Add polish to the initial experience.',
+      status: 'done',
+      phaseId: phase1.id,
+      tags: ['qa'],
+      order: 3,
+      createdAt: now(),
+      updatedAt: now(),
+    },
+    {
+      id: uid('feat'),
+      title: 'Feature 4',
+      description: 'Document core interactions and behaviors.',
       status: 'not_started',
       phaseId: phase2.id,
-      tags: ['projection'],
-      order: 3,
+      tags: ['docs'],
+      order: 4,
+      createdAt: now(),
+      updatedAt: now(),
+    },
+    {
+      id: uid('feat'),
+      title: 'Feature 5',
+      description: 'Validate data flow and edge cases.',
+      status: 'not_started',
+      phaseId: phase2.id,
+      tags: ['core'],
+      order: 5,
+      createdAt: now(),
+      updatedAt: now(),
+    },
+    {
+      id: uid('feat'),
+      title: 'Feature 6',
+      description: 'Improve performance for larger lists.',
+      status: 'not_started',
+      phaseId: phase2.id,
+      tags: ['perf'],
+      order: 6,
+      createdAt: now(),
+      updatedAt: now(),
+    },
+    {
+      id: uid('feat'),
+      title: 'Feature 7',
+      description: 'Draft the next wave of improvements.',
+      status: 'not_started',
+      phaseId: phase3.id,
+      tags: ['ux'],
+      order: 7,
+      createdAt: now(),
+      updatedAt: now(),
+    },
+    {
+      id: uid('feat'),
+      title: 'Feature 8',
+      description: 'Outline integration and rollout plan.',
+      status: 'not_started',
+      phaseId: phase3.id,
+      tags: ['docs'],
+      order: 8,
+      createdAt: now(),
+      updatedAt: now(),
+    },
+    {
+      id: uid('feat'),
+      title: 'Feature 9',
+      description: 'Define success metrics and follow-up.',
+      status: 'not_started',
+      phaseId: phase3.id,
+      tags: ['qa'],
+      order: 9,
       createdAt: now(),
       updatedAt: now(),
     },
   ];
 
-  return { version: 1, title: 'Workbench', phases: [phase1, phase2], features };
+  return { version: 1, title: 'Workbench', phases: [phase1, phase2, phase3], features };
 }
 
 function buildStatusMeta(
@@ -207,15 +275,55 @@ function seedPrd(): PrdDoc {
   return {
     version: 1,
     blocks: [
-      mk('title', 'Title', 1, 'JP Immersion Tutor — PRD'),
-      mk('problem', 'Problem', 2, ''),
-      mk('hypothesis', 'Hypothesis', 3, ''),
-      mk('audience', 'Target audience', 4, ''),
-      mk('success_metrics', 'Success metrics', 5, ''),
-      mk('non_goals', 'Non-goals', 6, ''),
-      mk('risks', 'Risks & unknowns', 7, ''),
-      mk('milestones', 'Milestones', 8, ''),
-      mk('notes', 'Notes', 9, ''),
+      mk('title', 'Title', 1, 'Product Requirements Document (PRD)'),
+      mk(
+        'problem',
+        'Problem',
+        2,
+        'Teams struggle to align on what to build and why, especially as priorities shift. Requirements are scattered across docs, tickets, and chats, which makes scope creep and rework common. There is no single source of truth that connects goals, decisions, and delivery.'
+      ),
+      mk(
+        'hypothesis',
+        'Hypothesis',
+        3,
+        'If we provide a lightweight, structured PRD that stays linked to the roadmap, teams will make faster decisions and ship with fewer revisions. A clear template with success metrics should reduce ambiguity and keep scope stable.'
+      ),
+      mk(
+        'audience',
+        'Target audience',
+        4,
+        '- Product managers who need quick alignment\n- Designers refining scope and user goals\n- Engineers planning delivery and estimates\n- Leadership reviewing progress and tradeoffs\n- QA and support preparing for launch'
+      ),
+      mk(
+        'success_metrics',
+        'Success metrics',
+        5,
+        '- PRD completion time under 30 minutes\n- Fewer than 2 scope revisions per feature\n- 20 percent reduction in clarification requests\n- 80 percent of features launched on initial target date\n- Stakeholder review cycle under 5 days'
+      ),
+      mk(
+        'non_goals',
+        'Non-goals',
+        6,
+        '- Full project management suite replacement\n- Automated roadmap generation\n- Real-time collaboration at scale\n- Custom workflow engines'
+      ),
+      mk(
+        'risks',
+        'Risks & unknowns',
+        7,
+        '- Template too rigid for diverse teams\n- Adoption risk if setup feels heavy\n- Metrics may be hard to measure consistently\n- Unclear ownership for keeping PRDs current\n- Integration with existing tools is limited'
+      ),
+      mk(
+        'milestones',
+        'Milestones',
+        8,
+        '- Week 1: Problem research and template draft\n- Week 2: Prototype and internal review\n- Week 3: Pilot with two teams\n- Week 4: Iterate on feedback and tighten metrics\n- Week 5: Launch and onboarding'
+      ),
+      mk(
+        'notes',
+        'Notes',
+        9,
+        'Keep the document short enough to read in one sitting. Capture only decisions that change how the team builds or measures success. Revisit the PRD at major milestones to confirm the scope still matches outcomes.'
+      ),
     ],
   };
 }
@@ -343,6 +451,7 @@ type InlineRichFieldProps = {
   html: string;
   onChangeHtml: (nextHtml: string) => void;
   placeholder: string;
+  readOnly?: boolean;
   themeVars: {
     border: string;
     inputBg: string;
@@ -357,6 +466,7 @@ const InlineRichField = memo(function InlineRichField({
   html,
   onChangeHtml,
   placeholder,
+  readOnly = false,
   themeVars,
   onFocusBlock,
   onBlurBlock,
@@ -379,15 +489,20 @@ const InlineRichField = memo(function InlineRichField({
       <div
         ref={elRef}
         className="prd-rich"
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning
         data-prd-field={blockId}
-        onFocus={(e) => onFocusBlock(blockId, e.currentTarget)}
+        onFocus={(e) => {
+          if (readOnly) return;
+          onFocusBlock(blockId, e.currentTarget);
+        }}
         onBlur={(e) => {
+          if (readOnly) return;
           const nextHtml = (e.currentTarget as HTMLDivElement).innerHTML;
           onBlurBlock(blockId, nextHtml);
         }}
         onInput={(e) => {
+          if (readOnly) return;
           const nextHtml = (e.currentTarget as HTMLDivElement).innerHTML;
           onChangeHtml(nextHtml);
         }}
@@ -578,6 +693,7 @@ function PhaseFromSpaceView({
   >;
   isLight: boolean;
 }) {
+  const [showDone, setShowDone] = useState(false);
   const phases = [...doc.phases].filter((p) => !archivedSet.has(p.id)).sort((a, b) => a.order - b.order);
 
   const byPhase = new Map<
@@ -608,7 +724,7 @@ function PhaseFromSpaceView({
     const top = items
       .slice()
       .sort((a, b) => a.order - b.order)
-      .filter((f) => f.status !== 'done')
+      .filter((f) => (showDone ? true : f.status !== 'done'))
       .slice(0, 4);
 
     byPhase.set(p.id, { total, counts, top, donePct });
@@ -626,25 +742,44 @@ function PhaseFromSpaceView({
             letterSpacing: 0.1,
           }}
         >
-          Phase “from space” view
+          Phase overview
         </div>
-        <button
-          type="button"
-          onClick={onShowAll}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 10,
-            border: `1px solid ${themeVars.border}`,
-            background: themeVars.panelBg3,
-            color: themeVars.appText,
-            cursor: 'pointer',
-            fontWeight: 850,
-            fontSize: 12,
-          }}
-          title="Show all phases in Roadmap"
-        >
-          Show all in Roadmap
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setShowDone((prev) => !prev)}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: `1px solid ${themeVars.border}`,
+              background: showDone ? 'rgba(255,186,90,0.14)' : themeVars.panelBg3,
+              color: themeVars.appText,
+              cursor: 'pointer',
+              fontWeight: 850,
+              fontSize: 12,
+            }}
+            title={showDone ? 'Hide done features' : 'Show done features'}
+          >
+            {showDone ? 'Hide done' : 'Show done'}
+          </button>
+          <button
+            type="button"
+            onClick={onShowAll}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 10,
+              border: `1px solid ${themeVars.border}`,
+              background: themeVars.panelBg3,
+              color: themeVars.appText,
+              cursor: 'pointer',
+              fontWeight: 850,
+              fontSize: 12,
+            }}
+            title="Show all phases in Roadmap"
+          >
+            Show all in Roadmap
+          </button>
+        </div>
       </div>
 
       <div
@@ -767,6 +902,7 @@ function PhaseFromSpaceView({
                       color: statusMeta[s].chipText,
                       fontSize: 11,
                       fontWeight: 800,
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {statusMeta[s].label}: {meta.counts[s]}
@@ -806,7 +942,16 @@ function PhaseFromSpaceView({
 }
 
 export default function App() {
-  const [doc, setDoc] = useState<WorkbenchDoc>(() => loadDoc() ?? seedDoc());
+  const [userDoc, setUserDoc] = useState<WorkbenchDoc>(() => loadDoc() ?? seedDoc());
+  const [userPrd, setUserPrd] = useState<PrdDoc>(() => loadPrd() ?? seedPrd());
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [demoDoc, setDemoDoc] = useState<WorkbenchDoc>(() => seedDoc());
+  const [demoPrd, setDemoPrd] = useState<PrdDoc>(() => seedPrd());
+  const doc = isDemoMode ? demoDoc : userDoc;
+  const setDoc = isDemoMode ? setDemoDoc : setUserDoc;
+  const prd = isDemoMode ? demoPrd : userPrd;
+  const setPrd = isDemoMode ? setDemoPrd : setUserPrd;
+  const editingDisabled = isDemoMode;
   const [theme, setTheme] = useState<ThemeMode>(() => loadTheme());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
@@ -833,6 +978,8 @@ export default function App() {
     y: 0,
     target: { kind: 'background' },
   });
+  const ctxMenuRef = useRef<HTMLDivElement | null>(null);
+  const [ctxMenuSize, setCtxMenuSize] = useState({ width: 0, height: 0 });
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [editorId, setEditorId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState<string>('');
@@ -856,8 +1003,9 @@ export default function App() {
   );
   const placementRafRef = useRef<number | null>(null);
   const placementNextRef = useRef<NewFeaturePlacement | null>(null);
-  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const placementLastAppliedRef = useRef<string>('');
   const lastOverIdRef = useRef<string | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const laneGridRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [tagPopover, setTagPopover] = useState<{
     open: boolean;
@@ -890,7 +1038,6 @@ export default function App() {
     phases: null,
   });
   const [activeSection, setActiveSection] = useState<DocSection>('roadmap');
-  const [prd, setPrd] = useState<PrdDoc>(() => loadPrd() ?? seedPrd());
   const [prdMode, setPrdMode] = useState<'view' | 'editTemplate'>('view');
   const [prdInlineEditId, setPrdInlineEditId] = useState<string | null>(null);
   const prdActiveRef = useRef<HTMLDivElement | null>(null);
@@ -898,6 +1045,7 @@ export default function App() {
   const [prdFocusId, setPrdFocusId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState<boolean>(false);
   const [detailsId, setDetailsId] = useState<string | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
 
   function loadArchivedPhases(): string[] {
     try {
@@ -929,7 +1077,9 @@ export default function App() {
   useEffect(() => {
     if (activeDragId !== NEW_FEATURE_DRAG_ID) return;
     const onMove = (e: PointerEvent) => {
-      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+      const x = e.clientX;
+      const y = e.clientY;
+      lastPointerRef.current = { x, y };
     };
     window.addEventListener('pointermove', onMove, { passive: true });
     return () => window.removeEventListener('pointermove', onMove);
@@ -937,16 +1087,19 @@ export default function App() {
 
   const queueNewFeaturePlacement = (next: NewFeaturePlacement | null) => {
     placementNextRef.current = next;
+
     if (placementRafRef.current != null) return;
+
     placementRafRef.current = requestAnimationFrame(() => {
       placementRafRef.current = null;
-      const queued = placementNextRef.current;
-      placementNextRef.current = null;
-      setNewFeaturePlacement((prev) => {
-        if (!queued) return prev ? null : prev;
-        if (prev && prev.phaseId === queued.phaseId && prev.index === queued.index) return prev;
-        return queued;
-      });
+
+      const n = placementNextRef.current;
+      const key = n ? `${n.phaseId}:${n.index}` : 'null';
+
+      if (key === placementLastAppliedRef.current) return;
+
+      placementLastAppliedRef.current = key;
+      setNewFeaturePlacement(n);
     });
   };
 
@@ -954,6 +1107,54 @@ export default function App() {
     if (placementRafRef.current != null) cancelAnimationFrame(placementRafRef.current);
     placementRafRef.current = null;
     placementNextRef.current = null;
+  };
+
+  const computeNewFeaturePlacementFromOverId = (
+    overId: string | null
+  ): NewFeaturePlacement | null => {
+    if (!overId) return null;
+
+    const getVisibleCount = (phaseId: string) => {
+      const hideDone = !!hideDoneByPhase[phaseId];
+      return [...doc.features]
+        .sort((a, b) => a.order - b.order)
+        .filter((f) => f.phaseId === phaseId)
+        .filter((f) => (hideDone ? f.status !== 'done' : true))
+        .filter(isFeatureVisible).length;
+    };
+
+    if (overId === NEW_FEATURE_GHOST_ID) {
+      const phaseId = (placementNextRef.current ?? newFeaturePlacement)?.phaseId ?? null;
+      if (!phaseId) return null;
+      const pointerIndex = getPhaseInsertIndex(phaseId);
+      if (pointerIndex != null) return { phaseId, index: pointerIndex };
+      return { phaseId, index: getVisibleCount(phaseId) };
+    }
+
+    if (overId.startsWith('phase-drop:')) {
+      const phaseId = overId.split(':')[1] ?? null;
+      if (!phaseId) return null;
+      const pointerIndex = getPhaseInsertIndex(phaseId);
+      if (pointerIndex != null) return { phaseId, index: pointerIndex };
+      return { phaseId, index: getVisibleCount(phaseId) };
+    }
+
+    if (isLaneId(overId)) {
+      const phaseId = phaseIdFromLaneId(overId);
+      if (!phaseId) return null;
+      const pointerIndex = getPhaseInsertIndex(phaseId);
+      if (pointerIndex != null) return { phaseId, index: pointerIndex };
+      return { phaseId, index: getVisibleCount(phaseId) };
+    }
+
+    const overFeat = doc.features.find((f) => f.id === overId);
+    const phaseId = overFeat?.phaseId ?? null;
+    if (!phaseId) return null;
+    const index = computeInsertIndexAroundFeature(phaseId, overId);
+    if (index != null) return { phaseId, index };
+    const pointerIndex = getPhaseInsertIndex(phaseId);
+    if (pointerIndex != null) return { phaseId, index: pointerIndex };
+    return { phaseId, index: getVisibleCount(phaseId) };
   };
 
   type PaletteItem =
@@ -1238,6 +1439,7 @@ export default function App() {
                   whiteSpace: 'normal',
                   overflowWrap: 'anywhere',
                   wordBreak: 'break-word',
+                  cursor: editingDisabled ? 'not-allowed' : 'text',
                 }}
                 onMouseDown={(e) => {
                   e.preventDefault();
@@ -1245,7 +1447,7 @@ export default function App() {
                   beginInlineTitleEdit(f.id, f.title);
                 }}
                 data-title
-                title="Click to rename"
+                title={editingDisabled ? 'Demo mode: rename disabled' : 'Click to rename'}
               >
                 {f.title}
               </div>
@@ -1340,7 +1542,7 @@ export default function App() {
                   border: `1px solid ${meta.chipBorder}`,
                   color: meta.chipText,
                   whiteSpace: 'nowrap',
-                  cursor: 'pointer',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
                   flexShrink: 0,
                 }}
                 role="button"
@@ -1675,11 +1877,11 @@ export default function App() {
               />
             ) : (
               <div
-                title="Click to rename phase"
+                title={editingDisabled ? 'Demo mode: rename disabled' : 'Click to rename phase'}
                 style={{
                   fontWeight: 850,
                   letterSpacing: 0.2,
-                  cursor: 'text',
+                  cursor: editingDisabled ? 'not-allowed' : 'text',
                   padding: '4px 8px',
                   borderRadius: 10,
                   border: hoverPhaseId === phase.id ? `1px solid ${themeVars.border}` : '1px solid transparent',
@@ -1745,6 +1947,7 @@ export default function App() {
               setNodeRef(node);
               laneGridRefs.current[phase.id] = node;
             }}
+            data-lane-grid-phase-id={phase.id}
             style={{
               width: laneInnerGridW,
               maxWidth: laneInnerGridW,
@@ -1922,8 +2125,9 @@ export default function App() {
   const editorTitleRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    saveDoc(doc);
-  }, [doc]);
+    if (isDemoMode) return;
+    saveDoc(userDoc);
+  }, [userDoc, isDemoMode]);
 
   useLayoutEffect(() => {
     const el = boardRef.current;
@@ -2034,6 +2238,35 @@ export default function App() {
 
     let index = col * boardRows + row;
     index = Math.max(0, Math.min(index, visibleCount));
+    return index;
+  };
+
+  const computeInsertIndexAroundFeature = (phaseId: string, overFeatureId: string) => {
+    const hideDone = !!hideDoneByPhase[phaseId];
+
+    const visibleIds = [...doc.features]
+      .sort((a, b) => a.order - b.order)
+      .filter((f) => f.phaseId === phaseId)
+      .filter((f) => (hideDone ? f.status !== 'done' : true))
+      .filter(isFeatureVisible)
+      .map((f) => f.id);
+
+    const overIndex = visibleIds.indexOf(overFeatureId);
+    if (overIndex === -1) return null;
+
+    const pointer = lastPointerRef.current;
+    const overEl = document.querySelector(
+      `[data-feature-card-id="${overFeatureId}"]`
+    ) as HTMLElement | null;
+
+    let index = overIndex;
+
+    if (pointer && overEl) {
+      const rect = overEl.getBoundingClientRect();
+      index = pointer.y < rect.top + rect.height / 2 ? overIndex : overIndex + 1;
+    }
+
+    index = Math.max(0, Math.min(index, visibleIds.length));
     return index;
   };
 
@@ -2252,6 +2485,7 @@ export default function App() {
   }
 
 function createFeatureAtEnd() {
+  if (editingDisabled) return;
   const newId = uid('feat');
   setDoc((prev) => {
     const phaseId = firstPhaseId(prev.phases);
@@ -2274,7 +2508,7 @@ function createFeatureAtEnd() {
 }
 
 function NewFeatureButton() {
-  const drag = useDraggable({ id: NEW_FEATURE_DRAG_ID });
+  const drag = useDraggable({ id: NEW_FEATURE_DRAG_ID, disabled: editingDisabled });
   const isDraggingNew = drag.isDragging;
 
   return (
@@ -2301,6 +2535,7 @@ function NewFeatureButton() {
         ref={drag.setNodeRef}
         {...drag.attributes}
         {...drag.listeners}
+        disabled={editingDisabled}
         onClick={() => {
           if (suppressNewFeatureClickRef.current) {
             suppressNewFeatureClickRef.current = false;
@@ -2314,6 +2549,7 @@ function NewFeatureButton() {
           transform: isDraggingNew ? 'scale(0.98)' : 'scale(1)',
           transition: 'opacity 140ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
           touchAction: 'none',
+          ...(editingDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : null),
         }}
         title="N"
       >
@@ -2324,6 +2560,7 @@ function NewFeatureButton() {
 }
 
 function addTemplate(kind: 'mvp' | 'bugs' | 'personal') {
+  if (editingDisabled) return;
   // Use existing phases; fallback to first phase
   const firstPhase = doc.phases[0]?.id;
   if (!firstPhase) return;
@@ -2351,11 +2588,13 @@ function addTemplate(kind: 'mvp' | 'bugs' | 'personal') {
 }
 
 function deleteFeature(id: string) {
+  if (editingDisabled) return;
   setDoc((prev) => ({ ...prev, features: prev.features.filter((f) => f.id !== id) }));
   if (selectedId === id) setSelectedId(null);
 }
 
 function cloneFeature(id: string) {
+  if (editingDisabled) return;
   setDoc((prev) => {
     const src = prev.features.find((f) => f.id === id);
     if (!src) return prev;
@@ -2372,12 +2611,14 @@ function cloneFeature(id: string) {
 }
 
   function setStatus(id: string, status: FeatureStatus) {
+    if (editingDisabled) return;
     setDoc((prev) => ({
       ...prev,
       features: prev.features.map((f) => (f.id === id ? { ...f, status, updatedAt: now() } : f)),
     }));
   }
   function createPhaseAtEnd() {
+    if (editingDisabled) return;
     setDoc((prev) => {
       const maxOrder = prev.phases.reduce((m, p) => Math.max(m, p.order), 0);
       const nextNum = maxOrder + 1;
@@ -2411,6 +2652,7 @@ function openEditor(id: string) {
 }
 
 function saveEditor() {
+  if (editingDisabled) return;
   if (!editorId) return;
   setDoc((prev) => ({
     ...prev,
@@ -2435,11 +2677,13 @@ function saveEditor() {
 }
 
 function beginInlineTitleEdit(id: string, current: string) {
+  if (editingDisabled) return;
   setEditingTitleId(id);
   setTitleDraft(current);
 }
 
 function beginInlinePhaseEdit(id: string, current: string) {
+  if (editingDisabled) return;
   setHoverPhaseId(null);
   setEditingPhaseId(id);
   setPhaseDraft(current);
@@ -2504,6 +2748,7 @@ function beginInlinePhaseEdit(id: string, current: string) {
   }
 
   const prdCmd = (cmd: string, val?: string) => {
+    if (editingDisabled) return;
     const el = prdActiveRef.current;
     if (!el) return;
     el.focus();
@@ -2515,6 +2760,7 @@ function beginInlinePhaseEdit(id: string, current: string) {
   };
 
   const prdLink = () => {
+    if (editingDisabled) return;
     const url = window.prompt('Link URL');
     if (!url) return;
     prdCmd('createLink', url);
@@ -2531,6 +2777,7 @@ function cancelInlinePhaseEdit() {
 }
 
   function updatePrdBlock(id: string, value: string) {
+    if (editingDisabled) return;
     setPrd((prev) => ({
       ...prev,
       blocks: prev.blocks.map((b) => (b.id === id ? { ...b, value } : b)),
@@ -2538,6 +2785,7 @@ function cancelInlinePhaseEdit() {
   }
 
 function addPrdBlockAfter(afterId: string) {
+  if (editingDisabled) return;
   setPrd((prev) => {
     const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
     const idx = blocks.findIndex((b) => b.id === afterId);
@@ -2557,6 +2805,7 @@ function addPrdBlockAfter(afterId: string) {
 }
 
 function addPrdBlock(title: string) {
+  if (editingDisabled) return;
   setPrd((prev) => ({
     ...prev,
     blocks: [
@@ -2573,10 +2822,12 @@ function addPrdBlock(title: string) {
 }
 
 function deletePrdBlock(id: string) {
+  if (editingDisabled) return;
   setPrd((prev) => normalizePrd({ ...prev, blocks: prev.blocks.filter((b) => b.id !== id) }));
 }
 
   function renamePrdBlock(id: string, label: string) {
+    if (editingDisabled) return;
     setPrd((prev) => ({
       ...prev,
       blocks: prev.blocks.map((b) => (b.id === id ? { ...b, label } : b)),
@@ -2584,6 +2835,7 @@ function deletePrdBlock(id: string) {
   }
 
   function movePrdBlock(id: string, delta: number) {
+    if (editingDisabled) return;
     setPrd((prev) => {
       const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
       const idx = blocks.findIndex((b) => b.id === id);
@@ -2598,6 +2850,7 @@ function deletePrdBlock(id: string) {
   }
 
 function commitInlineTitleEdit(id: string) {
+  if (editingDisabled) return;
   const next = titleDraft.trim();
   const original = doc.features.find((f) => f.id === id)?.title ?? '';
   if (!next) {
@@ -2616,6 +2869,7 @@ function commitInlineTitleEdit(id: string) {
 }
 
 function commitInlinePhaseEdit(id: string) {
+  if (editingDisabled) return;
   const next = phaseDraft.trim();
   const original = doc.phases.find((p) => p.id === id)?.name ?? '';
   if (!next || next === original) {
@@ -2665,7 +2919,13 @@ function openStatusFilterMenu(e: React.MouseEvent) {
     setStatusFilterMenu({ open: false, x: 0, y: 0 });
   }
 
-  function animateScrollTo(root: HTMLElement, top: number, duration = 260) {
+  function getScrollTopForEl(root: HTMLElement, el: HTMLElement) {
+    const rootRect = root.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    return root.scrollTop + (elRect.top - rootRect.top);
+  }
+
+  function animateScrollTo(root: HTMLElement, top: number, duration = 260, onDone?: () => void) {
     if (reducedMotion) {
       root.scrollTo({ top, behavior: 'auto' });
       return;
@@ -2678,6 +2938,12 @@ function openStatusFilterMenu(e: React.MouseEvent) {
       return;
     }
 
+    isProgrammaticScrollRef.current = true;
+    const prevSnapType = root.style.scrollSnapType;
+    const prevBehavior = root.style.scrollBehavior;
+    root.style.scrollSnapType = 'none';
+    root.style.scrollBehavior = 'auto';
+
     if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
     const start = performance.now();
 
@@ -2685,7 +2951,18 @@ function openStatusFilterMenu(e: React.MouseEvent) {
       const t = clamp((now - start) / duration, 0, 1);
       const eased = 1 - Math.pow(1 - t, 3);
       root.scrollTop = startTop + delta * eased;
-      if (t < 1) scrollAnimRef.current = requestAnimationFrame(tick);
+      if (t < 1) {
+        scrollAnimRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      root.scrollTop = top;
+      root.style.scrollSnapType = prevSnapType || '';
+      root.style.scrollBehavior = prevBehavior || '';
+      requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+        onDone?.();
+      });
     };
 
     scrollAnimRef.current = requestAnimationFrame(tick);
@@ -2704,11 +2981,12 @@ function openStatusFilterMenu(e: React.MouseEvent) {
     const el = sectionRefs.current[section];
     if (!root || !el) return;
 
+    setActiveSection(section);
     const hash = `#${section}`;
     if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
 
-    const top = el.offsetTop;
-    animateScrollTo(root, top);
+    const top = getScrollTopForEl(root, el);
+    animateScrollTo(root, top, 260);
   }
 
   function sectionFromHash(): DocSection | null {
@@ -2773,9 +3051,19 @@ useEffect(() => {
     return () => root.removeEventListener('wheel', onWheel);
   }, [activeSection, isEditorOpen, reducedMotion, activeDragId]);
 
+  useLayoutEffect(() => {
+    if (!ctxMenu.open) return;
+    const el = ctxMenuRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    setCtxMenuSize({ width: rect.width, height: rect.height });
+  }, [ctxMenu.open, ctxMenu.target.kind, ctxMenu.x, ctxMenu.y]);
+
   useEffect(() => {
-    savePrd(prd);
-  }, [prd]);
+    if (isDemoMode) return;
+    savePrd(userPrd);
+  }, [userPrd, isDemoMode]);
 
   useEffect(() => {
     if (!prdInlineEditId) return;
@@ -2848,6 +3136,7 @@ useEffect(() => {
 
     const obs = new IntersectionObserver(
       (entries) => {
+        if (isProgrammaticScrollRef.current) return;
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0))[0];
@@ -3192,12 +3481,46 @@ useEffect(() => {
     fontWeight: 900,
     fontSize: 12,
   };
+  const MENU_MARGIN = 8;
+  const ctxMenuWidth = ctxMenuSize.width || 180;
+  const ctxMenuHeight = ctxMenuSize.height || 160;
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0;
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0;
+  const ctxMenuLeft =
+    viewportWidth > 0
+      ? Math.max(MENU_MARGIN, Math.min(ctxMenu.x, viewportWidth - ctxMenuWidth - MENU_MARGIN))
+      : ctxMenu.x;
+  const ctxMenuTop =
+    viewportHeight > 0
+      ? ctxMenu.y + ctxMenuHeight + MENU_MARGIN > viewportHeight
+        ? Math.max(MENU_MARGIN, ctxMenu.y - ctxMenuHeight)
+        : ctxMenu.y
+      : ctxMenu.y;
 
   return (
     <div style={{ ...shellStyle, ['--prdLink' as any]: isLight ? 'rgba(30,120,255,0.92)' : 'rgba(120,200,255,0.95)' }}>
       <aside style={sidebarStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 0.2 }}>Workbench</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 0.2 }}>Workbench</div>
+            {isDemoMode ? (
+              <div
+                style={{
+                  marginLeft: 'auto',
+                  padding: '2px 6px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,186,90,0.55)',
+                  background: 'rgba(255,186,90,0.18)',
+                  color: 'rgba(255,210,140,0.95)',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: 0.2,
+                }}
+              >
+                Demo mode
+              </div>
+            ) : null}
+          </div>
           <div style={{ fontSize: 12, opacity: 0.65 }}>
             v{APP_VERSION} • Local-first • {doc.features.length} feature{doc.features.length === 1 ? '' : 's'}
           </div>
@@ -3250,6 +3573,59 @@ useEffect(() => {
         </label>
 
         <div style={{ flex: 1 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Demo</div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isDemoMode) {
+                setDemoDoc(seedDoc());
+                setDemoPrd(seedPrd());
+                setIsDemoMode(true);
+                setPrdMode('view');
+                setPrdInlineEditId(null);
+                cancelInlineTitleEdit();
+                cancelInlinePhaseEdit();
+                closeEditor();
+                closeDetails();
+                closeCtxMenu();
+                closeStatusPopover();
+                closeStatusFilterMenu();
+                closeTagPopover();
+                setSelectedId(null);
+                setPhaseFilter('all');
+                setStatusFilter(new Set(ALL_STATUSES));
+                setTagQuery('');
+                return;
+              }
+              setIsDemoMode(false);
+              closeEditor();
+              closeDetails();
+              closeCtxMenu();
+              closeStatusPopover();
+              closeStatusFilterMenu();
+              closeTagPopover();
+              setSelectedId(null);
+              setPhaseFilter('all');
+              setStatusFilter(new Set(ALL_STATUSES));
+              setTagQuery('');
+            }}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 999,
+              border: `1px solid ${themeVars.border}`,
+              background: isDemoMode ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
+              color: 'inherit',
+              cursor: 'pointer',
+              fontWeight: 800,
+              fontSize: 11,
+            }}
+            title="Toggle demo mode"
+          >
+            {isDemoMode ? 'On' : 'Off'}
+          </button>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Theme</div>
@@ -3307,13 +3683,15 @@ useEffect(() => {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  if (editingDisabled) return;
                   setPrdMode((m) => {
                     const next = m === 'editTemplate' ? 'view' : 'editTemplate';
                     if (next === 'editTemplate') setPrdInlineEditId(null);
                     return next;
-                  })
-                }
+                  });
+                }}
+                disabled={editingDisabled}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 12,
@@ -3321,7 +3699,8 @@ useEffect(() => {
                   background:
                     prdMode === 'editTemplate' ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
                   color: 'inherit',
-                  cursor: 'pointer',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  opacity: editingDisabled ? 0.5 : 1,
                   fontWeight: 800,
                 }}
                 title={prdMode === 'editTemplate' ? 'Switch to view mode' : 'Switch to template edit mode'}
@@ -3331,14 +3710,19 @@ useEffect(() => {
 
               <button
                 type="button"
-                onClick={() => setPrd(seedPrd())}
+                onClick={() => {
+                  if (editingDisabled) return;
+                  setPrd(seedPrd());
+                }}
+                disabled={editingDisabled}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 12,
                   border: `1px solid ${themeVars.border}`,
                   background: themeVars.panelBg2,
                   color: 'inherit',
-                  cursor: 'pointer',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  opacity: editingDisabled ? 0.5 : 1,
                   fontWeight: 750,
                 }}
                 title="Reset PRD template"
@@ -3364,13 +3748,40 @@ useEffect(() => {
                 Start with a title, then outline constraints and the MVP.
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                <button type="button" onClick={() => addPrdBlock('Constraints')} style={buttonStyle}>
+                <button
+                  type="button"
+                  onClick={() => addPrdBlock('Constraints')}
+                  disabled={editingDisabled}
+                  style={{
+                    ...buttonStyle,
+                    opacity: editingDisabled ? 0.5 : 1,
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
                   Add “Constraints”
                 </button>
-                <button type="button" onClick={() => addPrdBlock('MVP')} style={buttonStyle}>
+                <button
+                  type="button"
+                  onClick={() => addPrdBlock('MVP')}
+                  disabled={editingDisabled}
+                  style={{
+                    ...buttonStyle,
+                    opacity: editingDisabled ? 0.5 : 1,
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
                   Add “MVP”
                 </button>
-                <button type="button" onClick={() => addPrdBlock('Out of scope')} style={buttonStyle}>
+                <button
+                  type="button"
+                  onClick={() => addPrdBlock('Out of scope')}
+                  disabled={editingDisabled}
+                  style={{
+                    ...buttonStyle,
+                    opacity: editingDisabled ? 0.5 : 1,
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
                   Add “Out of scope”
                 </button>
               </div>
@@ -3426,18 +3837,20 @@ useEffect(() => {
                         value={b.label}
                         onChange={(e) => renamePrdBlock(b.id, e.target.value)}
                         onBlur={(e) => renamePrdBlock(b.id, e.target.value.trim() || b.label)}
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            padding: '8px 10px',
-                            borderRadius: 12,
-                            border: `1px solid ${themeVars.border}`,
-                            background: themeVars.inputBg,
-                            color: 'inherit',
-                            outline: 'none',
-                            fontWeight: 850,
-                            letterSpacing: 0.15,
-                          }}
+                        readOnly={editingDisabled}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          padding: '8px 10px',
+                          borderRadius: 12,
+                          border: `1px solid ${themeVars.border}`,
+                          background: themeVars.inputBg,
+                          color: 'inherit',
+                          outline: 'none',
+                          fontWeight: 850,
+                          letterSpacing: 0.15,
+                          ...(editingDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
+                        }}
                       />
 
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -3448,13 +3861,15 @@ useEffect(() => {
                             e.stopPropagation();
                           }}
                           onClick={() => movePrdBlock(b.id, -1)}
+                          disabled={editingDisabled}
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
                             background: themeVars.panelBg2,
                             color: 'inherit',
-                            cursor: 'pointer',
+                            cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                            opacity: editingDisabled ? 0.5 : 1,
                             fontWeight: 900,
                           }}
                           title="Move up"
@@ -3468,13 +3883,15 @@ useEffect(() => {
                             e.stopPropagation();
                           }}
                           onClick={() => movePrdBlock(b.id, 1)}
+                          disabled={editingDisabled}
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
                             background: themeVars.panelBg2,
                             color: 'inherit',
-                            cursor: 'pointer',
+                            cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                            opacity: editingDisabled ? 0.5 : 1,
                             fontWeight: 900,
                           }}
                           title="Move down"
@@ -3484,13 +3901,15 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={() => addPrdBlockAfter(b.id)}
+                          disabled={editingDisabled}
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
                             background: 'rgba(120,200,255,0.10)',
                             color: 'inherit',
-                            cursor: 'pointer',
+                            cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                            opacity: editingDisabled ? 0.5 : 1,
                             fontWeight: 900,
                           }}
                           title="Add block after"
@@ -3500,13 +3919,15 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={() => deletePrdBlock(b.id)}
+                          disabled={editingDisabled}
                           style={{
                             padding: '7px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
                             background: 'rgba(255,155,155,0.08)',
                             color: 'rgba(255,210,210,0.95)',
-                            cursor: 'pointer',
+                            cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                            opacity: editingDisabled ? 0.5 : 1,
                             fontWeight: 900,
                           }}
                           title="Delete block"
@@ -3531,6 +3952,7 @@ useEffect(() => {
                         blockId={b.id}
                         html={prdToHtml(b.value)}
                         onChangeHtml={(nextHtml) => updatePrdBlock(b.id, nextHtml)}
+                        readOnly={editingDisabled}
                         themeVars={themeVars}
                         onFocusBlock={(blockId, el) => {
                           prdActiveRef.current = el;
@@ -3570,11 +3992,16 @@ useEffect(() => {
                           />
                           <button
                             type="button"
-                            onClick={() => setPrdInlineEditId(b.id)}
+                            onClick={() => {
+                              if (editingDisabled) return;
+                              setPrdInlineEditId(b.id);
+                            }}
+                            disabled={editingDisabled}
                             style={{
                               ...prdPencilBtnStyle,
-                              opacity: prdHoverId === b.id ? 1 : 0,
-                              pointerEvents: prdHoverId === b.id ? 'auto' : 'none',
+                              opacity: prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
+                              pointerEvents: prdHoverId === b.id && !editingDisabled ? 'auto' : 'none',
+                              cursor: editingDisabled ? 'not-allowed' : 'pointer',
                               transition: 'opacity 140ms ease',
                             }}
                             aria-label="Edit section"
@@ -3592,11 +4019,16 @@ useEffect(() => {
                           <div style={{ ...prdH2Style, marginBottom: 0 }}>{b.label}</div>
                           <button
                             type="button"
-                            onClick={() => setPrdInlineEditId(b.id)}
+                            onClick={() => {
+                              if (editingDisabled) return;
+                              setPrdInlineEditId(b.id);
+                            }}
+                            disabled={editingDisabled}
                             style={{
                               ...prdPencilBtnStyle,
-                              opacity: prdHoverId === b.id ? 1 : 0,
-                              pointerEvents: prdHoverId === b.id ? 'auto' : 'none',
+                              opacity: prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
+                              pointerEvents: prdHoverId === b.id && !editingDisabled ? 'auto' : 'none',
+                              cursor: editingDisabled ? 'not-allowed' : 'pointer',
                               transition: 'opacity 140ms ease',
                             }}
                             aria-label="Edit section"
@@ -3703,6 +4135,7 @@ useEffect(() => {
                       blockId={b.id}
                       html={prdToHtml(b.value)}
                       onChangeHtml={(nextHtml) => updatePrdBlock(b.id, nextHtml)}
+                      readOnly={editingDisabled}
                       themeVars={themeVars}
                       onFocusBlock={(blockId, el) => {
                         prdActiveRef.current = el;
@@ -3748,9 +4181,9 @@ useEffect(() => {
                   if (activeId === NEW_FEATURE_DRAG_ID) {
                     setDisableDropAnimation(true);
                     suppressNewFeatureClickRef.current = true;
-                    lastOverIdRef.current = null;
                     clearNewFeaturePlacementQueue();
-                    setNewFeaturePlacement(null);
+                    queueNewFeaturePlacement(null);
+                    lastOverIdRef.current = null;
                   }
                 }}
                 onDragOver={(event: DragOverEvent) => {
@@ -3758,82 +4191,31 @@ useEffect(() => {
                   if (activeId !== NEW_FEATURE_DRAG_ID) return;
                   const over = event.over;
                   if (!over) {
+                    lastOverIdRef.current = null;
                     queueNewFeaturePlacement(null);
                     return;
                   }
                   const rawOverId = String(over.id);
-                  const overId = rawOverId === NEW_FEATURE_GHOST_ID ? lastOverIdRef.current : rawOverId;
-                  if (!overId) {
-                    queueNewFeaturePlacement(null);
-                    return;
-                  }
-                  if (rawOverId !== NEW_FEATURE_GHOST_ID) lastOverIdRef.current = rawOverId;
-                  let phaseId: string | null = null;
-                  let index: number | null = null;
+                  lastOverIdRef.current = rawOverId;
+                  const pointer = lastPointerRef.current;
+                  if (!pointer) return;
+                  queueNewFeaturePlacement(computeNewFeaturePlacementFromOverId(rawOverId));
+                }}
+                onDragMove={(event: DragMoveEvent) => {
+                  const activeId = String(event.active.id);
+                  if (activeId !== NEW_FEATURE_DRAG_ID) return;
 
-                  if (overId.startsWith('phase-drop:')) {
-                    phaseId = overId.split(':')[1] ?? null;
-                  } else if (isLaneId(overId)) {
-                    phaseId = phaseIdFromLaneId(overId);
-                  } else {
-                    const overFeat = doc.features.find((f) => f.id === overId);
-                    phaseId = overFeat?.phaseId ?? null;
-                    if (phaseId) {
-                      const hideDone = !!hideDoneByPhase[phaseId];
-                      const visibleIds = [...doc.features]
-                        .sort((a, b) => a.order - b.order)
-                        .filter((f) => f.phaseId === phaseId)
-                        .filter((f) => (hideDone ? f.status !== 'done' : true))
-                        .filter(isFeatureVisible)
-                        .map((f) => f.id);
-
-                      const overIndex = visibleIds.indexOf(overId);
-                      if (overIndex !== -1) {
-                        const pointer = lastPointerRef.current;
-                        const overEl = document.querySelector(
-                          `[data-feature-card-id="${overId}"]`
-                        ) as HTMLElement | null;
-                        if (pointer && overEl) {
-                          const rect = overEl.getBoundingClientRect();
-                          index =
-                            pointer.y < rect.top + rect.height / 2 ? overIndex : overIndex + 1;
-                        } else {
-                          index = overIndex;
-                        }
-                        index = Math.max(0, Math.min(index, visibleIds.length));
-                      }
-                    }
-                  }
-
-                  if (!phaseId) {
-                    queueNewFeaturePlacement(null);
-                    return;
-                  }
-
-                  if (index == null) {
-                    const pointerIndex = getPhaseInsertIndex(phaseId);
-                    if (pointerIndex != null) {
-                      index = pointerIndex;
-                    } else {
-                      const hideDone = !!hideDoneByPhase[phaseId];
-                      const visibleCount = [...doc.features]
-                        .sort((a, b) => a.order - b.order)
-                        .filter((f) => f.phaseId === phaseId)
-                        .filter((f) => (hideDone ? f.status !== 'done' : true))
-                        .filter(isFeatureVisible).length;
-                      index = visibleCount;
-                    }
-                  }
-
-                  queueNewFeaturePlacement({ phaseId, index });
+                  const pointer = lastPointerRef.current;
+                  if (!pointer) return;
+                  const overId = event.over?.id ? String(event.over.id) : lastOverIdRef.current;
+                  queueNewFeaturePlacement(computeNewFeaturePlacementFromOverId(overId ?? null));
                 }}
                 onDragCancel={(event: DragCancelEvent) => {
                   setActiveDragId(null);
                   clearNewFeaturePlacementQueue();
-                  setNewFeaturePlacement(null);
+                  queueNewFeaturePlacement(null);
                   if (String(event.active.id) === NEW_FEATURE_DRAG_ID) {
                     setTimeout(() => setDisableDropAnimation(false), 0);
-                    lastOverIdRef.current = null;
                   }
                   setTimeout(() => {
                     suppressNewFeatureClickRef.current = false;
@@ -3845,10 +4227,9 @@ useEffect(() => {
                   setActiveDragId(null);
                   const placement = placementNextRef.current ?? newFeaturePlacement;
                   clearNewFeaturePlacementQueue();
-                  setNewFeaturePlacement(null);
+                  queueNewFeaturePlacement(null);
                   if (activeId === NEW_FEATURE_DRAG_ID) {
                     setTimeout(() => setDisableDropAnimation(false), 0);
-                    lastOverIdRef.current = null;
                   }
                   setTimeout(() => {
                     suppressNewFeatureClickRef.current = false;
@@ -4098,15 +4479,17 @@ useEffect(() => {
                           key={t.kind}
                           type="button"
                           onClick={() => addTemplate(t.kind as 'mvp' | 'bugs' | 'personal')}
+                          disabled={editingDisabled}
                           style={{
                             padding: '8px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
                             background: themeVars.panelBg3,
                             color: 'inherit',
-                            cursor: 'pointer',
+                            cursor: editingDisabled ? 'not-allowed' : 'pointer',
                             fontWeight: 900,
                             fontSize: 12,
+                            opacity: editingDisabled ? 0.5 : 1,
                           }}
                         >
                           {t.label}
@@ -4165,6 +4548,7 @@ useEffect(() => {
                       <button
                         type="button"
                         onClick={createPhaseAtEnd}
+                        disabled={editingDisabled}
                         style={{
                           width: 72,
                           minWidth: 72,
@@ -4173,7 +4557,8 @@ useEffect(() => {
                           background: themeVars.panelBg,
                           color: themeVars.appText,
                           boxShadow: themeVars.shadow1,
-                          cursor: 'pointer',
+                          cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                          opacity: editingDisabled ? 0.5 : 1,
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
@@ -4463,6 +4848,7 @@ useEffect(() => {
                   setStatus(statusPopover.featureId!, s);
                   closeStatusPopover();
                 }}
+                disabled={editingDisabled}
                 style={{
                   textAlign: 'left',
                   padding: '8px 10px',
@@ -4470,7 +4856,8 @@ useEffect(() => {
                   color: 'inherit',
                   border: 'none',
                   borderRadius: 8,
-                  cursor: 'pointer',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  opacity: editingDisabled ? 0.5 : 1,
                   fontWeight: 700,
                 }}
               >
@@ -4600,11 +4987,12 @@ useEffect(() => {
           }}
         >
           <div
+            ref={ctxMenuRef}
             onMouseDown={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
-              top: ctxMenu.y,
-              left: ctxMenu.x,
+              top: ctxMenuTop,
+              left: ctxMenuLeft,
               background: themeVars.panelBgStrong,
               color: themeVars.appText,
               borderRadius: 10,
@@ -4620,9 +5008,11 @@ useEffect(() => {
               <button
                 type="button"
                 onClick={() => {
+                  if (editingDisabled) return;
                   createFeatureAtEnd();
                   closeCtxMenu();
                 }}
+                disabled={editingDisabled}
                 style={{
                   textAlign: 'left',
                   padding: '8px 10px',
@@ -4630,7 +5020,8 @@ useEffect(() => {
                   color: 'inherit',
                   border: 'none',
                   borderRadius: 8,
-                  cursor: 'pointer',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  opacity: editingDisabled ? 0.5 : 1,
                 }}
               >
                 New feature
@@ -4641,10 +5032,12 @@ useEffect(() => {
                   type="button"
                   onClick={() => {
                     if (ctxMenu.target.kind !== 'feature') return;
+                    if (editingDisabled) return;
                     const id = ctxMenu.target.id;
                     openEditor(id);
                     closeCtxMenu();
                   }}
+                  disabled={editingDisabled}
                   style={{
                     textAlign: 'left',
                     padding: '8px 10px',
@@ -4652,7 +5045,8 @@ useEffect(() => {
                     color: 'inherit',
                     border: 'none',
                     borderRadius: 8,
-                    cursor: 'pointer',
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                    opacity: editingDisabled ? 0.5 : 1,
                   }}
                 >
                   Edit…
@@ -4661,10 +5055,12 @@ useEffect(() => {
                   type="button"
                   onClick={() => {
                     if (ctxMenu.target.kind !== 'feature') return;
+                    if (editingDisabled) return;
                     const id = ctxMenu.target.id;
                     cloneFeature(id);
                     closeCtxMenu();
                   }}
+                  disabled={editingDisabled}
                   style={{
                     textAlign: 'left',
                     padding: '8px 10px',
@@ -4672,7 +5068,8 @@ useEffect(() => {
                     color: 'inherit',
                     border: 'none',
                     borderRadius: 8,
-                    cursor: 'pointer',
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                    opacity: editingDisabled ? 0.5 : 1,
                   }}
                 >
                   Clone
@@ -4681,10 +5078,12 @@ useEffect(() => {
                   type="button"
                   onClick={() => {
                     if (ctxMenu.target.kind !== 'feature') return;
+                    if (editingDisabled) return;
                     const id = ctxMenu.target.id;
                     setStatus(id, 'done');
                     closeCtxMenu();
                   }}
+                  disabled={editingDisabled}
                   style={{
                     textAlign: 'left',
                     padding: '8px 10px',
@@ -4692,7 +5091,8 @@ useEffect(() => {
                     color: 'inherit',
                     border: 'none',
                     borderRadius: 8,
-                    cursor: 'pointer',
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                    opacity: editingDisabled ? 0.5 : 1,
                   }}
                 >
                   Mark done
@@ -4701,10 +5101,12 @@ useEffect(() => {
                   type="button"
                   onClick={() => {
                     if (ctxMenu.target.kind !== 'feature') return;
+                    if (editingDisabled) return;
                     const id = ctxMenu.target.id;
                     deleteFeature(id);
                     closeCtxMenu();
                   }}
+                  disabled={editingDisabled}
                   style={{
                     textAlign: 'left',
                     padding: '8px 10px',
@@ -4712,7 +5114,8 @@ useEffect(() => {
                     color: '#ff9b9b',
                     border: 'none',
                     borderRadius: 8,
-                    cursor: 'pointer',
+                    cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                    opacity: editingDisabled ? 0.5 : 1,
                   }}
                 >
                   Delete
@@ -4757,6 +5160,11 @@ useEffect(() => {
                 {doc.phases.find((p) => p.id === draftPhaseId)?.name ?? 'Unknown phase'} ·{' '}
                 {STATUS_META[draftStatus].label}
               </div>
+              {editingDisabled ? (
+                <div style={{ fontSize: 12, color: themeVars.muted }}>
+                  Demo mode: changes aren’t saved.
+                </div>
+              ) : null}
             </div>
 
             <div style={{ display: 'grid', gap: 8 }}>
@@ -4764,6 +5172,7 @@ useEffect(() => {
               <input
                 ref={editorTitleRef}
                 value={draftTitle}
+                readOnly={editingDisabled}
                 onChange={(e) => setDraftTitle(e.target.value)}
                 style={{
                   padding: '10px 12px',
@@ -4774,12 +5183,15 @@ useEffect(() => {
                   outline: 'none',
                   fontSize: 15,
                   boxShadow: '0 0 0 0 rgba(120,200,255,0.5)',
+                  ...(editingDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
                 }}
                 onFocus={(e) => {
+                  if (editingDisabled) return;
                   e.currentTarget.style.border = '1px solid rgba(120,200,255,0.5)';
                   e.currentTarget.style.boxShadow = '0 0 0 6px rgba(120,200,255,0.12)';
                 }}
                 onBlur={(e) => {
+                  if (editingDisabled) return;
                   e.currentTarget.style.border = `1px solid ${themeVars.border}`;
                   e.currentTarget.style.boxShadow = '0 0 0 0 rgba(120,200,255,0.5)';
                 }}
@@ -4790,6 +5202,7 @@ useEffect(() => {
               <label style={{ fontSize: 13, opacity: 0.8 }}>Notes</label>
               <textarea
                 value={draftDescription}
+                readOnly={editingDisabled}
                 onChange={(e) => setDraftDescription(e.target.value)}
                 rows={4}
                 style={{
@@ -4803,12 +5216,15 @@ useEffect(() => {
                   minHeight: 90,
                   fontSize: 14,
                   boxShadow: '0 0 0 0 rgba(120,200,255,0.5)',
+                  ...(editingDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
                 }}
                 onFocus={(e) => {
+                  if (editingDisabled) return;
                   e.currentTarget.style.border = '1px solid rgba(120,200,255,0.5)';
                   e.currentTarget.style.boxShadow = '0 0 0 6px rgba(120,200,255,0.12)';
                 }}
                 onBlur={(e) => {
+                  if (editingDisabled) return;
                   e.currentTarget.style.border = `1px solid ${themeVars.border}`;
                   e.currentTarget.style.boxShadow = '0 0 0 0 rgba(120,200,255,0.5)';
                 }}
@@ -4819,6 +5235,7 @@ useEffect(() => {
               <label style={{ fontSize: 13, opacity: 0.8 }}>Tags (comma-separated)</label>
               <input
                 value={draftTags}
+                readOnly={editingDisabled}
                 onChange={(e) => setDraftTags(e.target.value)}
                 style={{
                   padding: '10px 12px',
@@ -4829,12 +5246,15 @@ useEffect(() => {
                   outline: 'none',
                   fontSize: 14,
                   boxShadow: '0 0 0 0 rgba(120,200,255,0.5)',
+                  ...(editingDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
                 }}
                 onFocus={(e) => {
+                  if (editingDisabled) return;
                   e.currentTarget.style.border = '1px solid rgba(120,200,255,0.5)';
                   e.currentTarget.style.boxShadow = '0 0 0 6px rgba(120,200,255,0.12)';
                 }}
                 onBlur={(e) => {
+                  if (editingDisabled) return;
                   e.currentTarget.style.border = `1px solid ${themeVars.border}`;
                   e.currentTarget.style.boxShadow = '0 0 0 0 rgba(120,200,255,0.5)';
                 }}
@@ -4847,6 +5267,7 @@ useEffect(() => {
                 <select
                   value={draftPhaseId}
                   onChange={(e) => setDraftPhaseId(e.target.value)}
+                  disabled={editingDisabled}
                   style={{
                     padding: '10px 12px',
                     borderRadius: 12,
@@ -4855,6 +5276,7 @@ useEffect(() => {
                     color: 'inherit',
                     outline: 'none',
                     fontSize: 14,
+                    ...(editingDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : null),
                   }}
                 >
                   {doc.phases
@@ -4878,6 +5300,7 @@ useEffect(() => {
                         key={s}
                         type="button"
                         onClick={() => setDraftStatus(s)}
+                        disabled={editingDisabled}
                         style={{
                           padding: '8px 10px',
                           borderRadius: 12,
@@ -4886,7 +5309,8 @@ useEffect(() => {
                           color: active ? meta.chipText : themeVars.appText,
                           fontWeight: 700,
                           fontSize: 12,
-                          cursor: 'pointer',
+                          cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                          opacity: editingDisabled ? 0.5 : 1,
                         }}
                       >
                         {meta.label}
@@ -4916,14 +5340,16 @@ useEffect(() => {
               <button
                 type="button"
                 onClick={saveEditor}
+                disabled={editingDisabled}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,
                   border: `1px solid ${themeVars.border}`,
                   background: 'linear-gradient(120deg, rgba(120,200,255,0.6), rgba(120,160,255,0.7))',
                   color: '#0b111a',
-                  cursor: 'pointer',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
                   fontWeight: 700,
+                  opacity: editingDisabled ? 0.6 : 1,
                 }}
               >
                 Save
