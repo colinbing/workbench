@@ -544,7 +544,8 @@ const CARD_MAX_H = 195;
 const APP_VERSION = '0.1';
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
-  const BOARD_PAD_BOTTOM = 0;
+const BOARD_PAD_BOTTOM = 10
+const LANE_SAFE_PAD = 8;
 type DocSection = 'prd' | 'roadmap' | 'phases';
 
 const SECTION_LABELS: Record<DocSection, string> = {
@@ -701,16 +702,19 @@ const PrdToolbar = memo(function PrdToolbar({
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        flexWrap: 'nowrap',
-        overflowX: 'auto',
-        overflowY: 'hidden',
+        flexWrap: 'wrap',
+        overflow: 'hidden',
         WebkitOverflowScrolling: 'touch',
         paddingBottom: 4,
         padding: 8,
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
         borderRadius: 14,
         border: `1px solid ${themeVars.border}`,
         background: themeVars.panelBg2,
-        minHeight: 44,
+        minHeight: 40,
         opacity: isVisible ? 1 : 0,
         pointerEvents: isVisible ? 'auto' : 'none',
         transform: isVisible ? 'translateY(0)' : 'translateY(-2px)',
@@ -775,8 +779,8 @@ const PrdToolbar = memo(function PrdToolbar({
           defaultValue="#ffffff"
           onChange={(e) => onCmd('foreColor', e.target.value)}
           style={{
-            width: 20,
-            height: 20,
+            width: 16,
+            height: 16,
             border: 'none',
             background: 'transparent',
             padding: 0,
@@ -1120,6 +1124,11 @@ export default function App() {
   }>({ open: false, projectId: null });
   const projectImportRef = useRef<HTMLInputElement | null>(null);
   const [projectImportTargetId, setProjectImportTargetId] = useState<string | null>(null);
+  const [prdHistoryByProject, setPrdHistoryByProject] = useState<
+    Record<string, { past: PrdDoc[]; future: PrdDoc[] }>
+  >({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
   const [deleteHoldProgress, setDeleteHoldProgress] = useState(0);
   const deleteHoldStartRef = useRef<number | null>(null);
   const deleteHoldRafRef = useRef<number | null>(null);
@@ -1967,8 +1976,7 @@ export default function App() {
     const cols = Math.max(1, Math.ceil(Math.max(laneCount, 1) / boardRows));
     const laneInnerGridW = cols * CARD_W + Math.max(0, cols - 1) * GRID_COL_GAP;
     const laneW = laneInnerGridW + 10 * 2 + 6;
-    const SAFE_LIFT_PAD = 8; // enough to avoid clipping hover lift + shadow without wasting space
-    const padY = Math.max(boardPadTop, SAFE_LIFT_PAD);
+    const padY = LANE_SAFE_PAD + boardPadTop; // keep lift/shadow room while honoring computed centering
 
     return (
       <div
@@ -2301,16 +2309,17 @@ export default function App() {
       const h = el.clientHeight - BOARD_PAD_BOTTOM - LANE_CHROME_Y;
       const gap = GRID_ROW_GAP;
       const minCard = CARD_MIN_H;
+      const usable = Math.max(0, h - LANE_SAFE_PAD * 2);
 
-      const rows = Math.max(1, Math.floor((h + gap) / (minCard + gap)));
+      const rows = Math.max(1, Math.floor((usable + gap) / (minCard + gap)));
 
       const usedMin = rows * minCard + Math.max(0, rows - 1) * gap;
-      const slack = Math.max(0, h - usedMin);
+      const slack = Math.max(0, usable - usedMin);
       const grow = Math.floor(slack / rows);
       const nextCardH = clamp(minCard + grow, CARD_MIN_H, CARD_MAX_H);
 
       const used = rows * nextCardH + Math.max(0, rows - 1) * gap;
-      const topPad = clamp(Math.floor(Math.max(0, h - used) / 2), 0, 28);
+      const topPad = clamp(Math.floor(Math.max(0, usable - used) / 2), 0, 28);
 
       setBoardRows(rows);
       setCardH(nextCardH);
@@ -2947,9 +2956,17 @@ function cancelInlinePhaseEdit() {
     }));
   }
 
+  function commitPrdBlock(id: string, value: string) {
+    if (editingDisabled) return;
+    updatePrdWithHistory((prev) => ({
+      ...prev,
+      blocks: prev.blocks.map((b) => (b.id === id ? { ...b, value } : b)),
+    }));
+  }
+
 function addPrdBlockAfter(afterId: string) {
   if (editingDisabled) return;
-  setPrd((prev) => {
+  updatePrdWithHistory((prev) => {
     const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
     const idx = blocks.findIndex((b) => b.id === afterId);
     const insertAt = idx === -1 ? blocks.length : idx + 1;
@@ -2969,7 +2986,7 @@ function addPrdBlockAfter(afterId: string) {
 
 function addPrdBlock(title: string) {
   if (editingDisabled) return;
-  setPrd((prev) => ({
+  updatePrdWithHistory((prev) => ({
     ...prev,
     blocks: [
       ...prev.blocks,
@@ -2986,12 +3003,14 @@ function addPrdBlock(title: string) {
 
 function deletePrdBlock(id: string) {
   if (editingDisabled) return;
-  setPrd((prev) => normalizePrd({ ...prev, blocks: prev.blocks.filter((b) => b.id !== id) }));
+  updatePrdWithHistory((prev) =>
+    normalizePrd({ ...prev, blocks: prev.blocks.filter((b) => b.id !== id) })
+  );
 }
 
   function renamePrdBlock(id: string, label: string) {
     if (editingDisabled) return;
-    setPrd((prev) => ({
+    updatePrdWithHistory((prev) => ({
       ...prev,
       blocks: prev.blocks.map((b) => (b.id === id ? { ...b, label } : b)),
     }));
@@ -2999,7 +3018,7 @@ function deletePrdBlock(id: string) {
 
   function movePrdBlock(id: string, delta: number) {
     if (editingDisabled) return;
-    setPrd((prev) => {
+    updatePrdWithHistory((prev) => {
       const blocks = [...prev.blocks].sort((a, b) => a.order - b.order);
       const idx = blocks.findIndex((b) => b.id === id);
       if (idx === -1) return normalizePrd(prev);
@@ -3227,6 +3246,17 @@ useEffect(() => {
     if (!projectColorPicker.open) return;
     resetDeleteHold();
   }, [projectColorPicker.open, projectColorPicker.projectId]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target || !settingsRef.current) return;
+      if (!settingsRef.current.contains(target)) setSettingsOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -3593,7 +3623,11 @@ useEffect(() => {
     scrollSnapAlign: 'start',
     scrollSnapStop: 'always',
   };
-  const roadmapSectionStyle: React.CSSProperties = { ...sectionStyle, padding: 0 };
+  const roadmapSectionStyle: React.CSSProperties = {
+    ...sectionStyle,
+    padding: 0,
+    background: isLight ? '#ffffff' : 'transparent',
+  };
   const PRD_COL_W = 520;
   const PRD_COL_GAP = 24;
   const PRD_BODY_SIZE = 16;
@@ -3642,13 +3676,32 @@ useEffect(() => {
     fontSize: 13,
   };
   const prdToolBtn: React.CSSProperties = {
-    padding: '6px 9px',
-    borderRadius: 12,
+    height: 30,
+    minWidth: 30,
+    padding: '0 10px',
+    borderRadius: 10,
     border: `1px solid ${themeVars.border}`,
     background: themeVars.panelBg2,
     color: 'inherit',
-    fontWeight: 900,
+    fontWeight: 800,
     fontSize: 12,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    whiteSpace: 'nowrap',
+    lineHeight: 1,
+    flexShrink: 0,
+  };
+  const prdActionBtn: React.CSSProperties = {
+    padding: '6px 10px',
+    borderRadius: 10,
+    border: `1px solid ${themeVars.border}`,
+    background: themeVars.panelBg2,
+    color: 'inherit',
+    fontWeight: 800,
+    fontSize: 12,
+    cursor: 'pointer',
   };
   const formatLastEdited = (ts: number) => {
     if (!ts) return '—';
@@ -3775,6 +3828,48 @@ useEffect(() => {
       projectImportRef.current.value = '';
       projectImportRef.current.click();
     }
+  };
+  const clonePrd = (value: PrdDoc) =>
+    JSON.parse(JSON.stringify(value)) as PrdDoc;
+  const updatePrdWithHistory = (updater: (prev: PrdDoc) => PrdDoc) => {
+    if (editingDisabled) return;
+    if (!activeProjectId) return;
+    setPrd((prev) => {
+      setPrdHistoryByProject((history) => {
+        const existing = history[activeProjectId] ?? { past: [], future: [] };
+        const past = [...existing.past, clonePrd(prev)];
+        if (past.length > 3) past.splice(0, past.length - 3);
+        return { ...history, [activeProjectId]: { past, future: [] } };
+      });
+      return updater(prev);
+    });
+  };
+  const activePrdHistory = activeProjectId
+    ? prdHistoryByProject[activeProjectId] ?? { past: [], future: [] }
+    : { past: [], future: [] };
+  const undoPrd = () => {
+    if (!activeProjectId) return;
+    if (!activePrdHistory.past.length) return;
+    const prevState = activePrdHistory.past[activePrdHistory.past.length - 1];
+    const past = activePrdHistory.past.slice(0, -1);
+    const future = [clonePrd(prd), ...activePrdHistory.future].slice(0, 3);
+    setPrdHistoryByProject((history) => ({
+      ...history,
+      [activeProjectId]: { past, future },
+    }));
+    setPrd(prevState);
+  };
+  const redoPrd = () => {
+    if (!activeProjectId) return;
+    if (!activePrdHistory.future.length) return;
+    const nextState = activePrdHistory.future[0];
+    const future = activePrdHistory.future.slice(1);
+    const past = [...activePrdHistory.past, clonePrd(prd)].slice(-3);
+    setPrdHistoryByProject((history) => ({
+      ...history,
+      [activeProjectId]: { past, future },
+    }));
+    setPrd(nextState);
   };
   const DELETE_HOLD_MS = 1600;
   const resetDeleteHold = () => {
@@ -3947,9 +4042,9 @@ useEffect(() => {
                     fontSize: isActive ? 12 : 11,
                     letterSpacing: 0.1,
                     color: themeVars.appText,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    whiteSpace: 'normal',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {color ? (
@@ -4082,75 +4177,12 @@ useEffect(() => {
 
         <div style={{ height: 1, background: themeVars.divider, margin: '6px 0' }} />
 
-        <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 12, opacity: 0.85 }}>
-          <input
-            type="checkbox"
-            checked={reducedMotion}
-            onChange={(e) => setReducedMotion(e.target.checked)}
-          />
-          Reduced motion
-        </label>
-
         <div style={{ flex: 1 }} />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Demo</div>
+        <div ref={settingsRef} style={{ position: 'relative', alignSelf: 'flex-start' }}>
           <button
             type="button"
-            onClick={() => {
-              if (!isDemoMode) {
-                setDemoDoc(seedDoc());
-                setDemoPrd(seedPrd());
-                setIsDemoMode(true);
-                setPrdMode('view');
-                setPrdInlineEditId(null);
-                cancelInlineTitleEdit();
-                cancelInlinePhaseEdit();
-                closeEditor();
-                closeDetails();
-                closeCtxMenu();
-                closeStatusPopover();
-                closeStatusFilterMenu();
-                closeTagPopover();
-                setSelectedId(null);
-                setPhaseFilter('all');
-                setStatusFilter(new Set(ALL_STATUSES));
-                setTagQuery('');
-                return;
-              }
-              setIsDemoMode(false);
-              closeEditor();
-              closeDetails();
-              closeCtxMenu();
-              closeStatusPopover();
-              closeStatusFilterMenu();
-              closeTagPopover();
-              setSelectedId(null);
-              setPhaseFilter('all');
-              setStatusFilter(new Set(ALL_STATUSES));
-              setTagQuery('');
-            }}
-            style={{
-              padding: '6px 10px',
-              borderRadius: 999,
-              border: `1px solid ${themeVars.border}`,
-              background: isDemoMode ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
-              color: 'inherit',
-              cursor: 'pointer',
-              fontWeight: 800,
-              fontSize: 11,
-            }}
-            title="Toggle demo mode"
-          >
-            {isDemoMode ? 'On' : 'Off'}
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Theme</div>
-          <button
-            type="button"
-            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            onClick={() => setSettingsOpen((prev) => !prev)}
             style={{
               padding: '8px 10px',
               borderRadius: 12,
@@ -4160,12 +4192,122 @@ useEffect(() => {
               cursor: 'pointer',
               fontWeight: 900,
               fontSize: 12,
-              letterSpacing: 0.15,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
             }}
-            title="Toggle dark/light"
+            title="Settings"
           >
-            {theme === 'dark' ? 'Dark' : 'Light'}
+            <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>
+              ⚙
+            </span>
+            Settings
           </button>
+          {settingsOpen ? (
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                bottom: '110%',
+                minWidth: 200,
+                padding: 10,
+                borderRadius: 12,
+                border: `1px solid ${themeVars.border}`,
+                background: themeVars.panelBgStrong,
+                boxShadow: themeVars.shadow2,
+                display: 'grid',
+                gap: 10,
+                zIndex: 10,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Demo</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isDemoMode) {
+                      setDemoDoc(seedDoc());
+                      setDemoPrd(seedPrd());
+                      setIsDemoMode(true);
+                      setPrdMode('view');
+                      setPrdInlineEditId(null);
+                      cancelInlineTitleEdit();
+                      cancelInlinePhaseEdit();
+                      closeEditor();
+                      closeDetails();
+                      closeCtxMenu();
+                      closeStatusPopover();
+                      closeStatusFilterMenu();
+                      closeTagPopover();
+                      setSelectedId(null);
+                      setPhaseFilter('all');
+                      setStatusFilter(new Set(ALL_STATUSES));
+                      setTagQuery('');
+                      setSettingsOpen(false);
+                      return;
+                    }
+                    setIsDemoMode(false);
+                    closeEditor();
+                    closeDetails();
+                    closeCtxMenu();
+                    closeStatusPopover();
+                    closeStatusFilterMenu();
+                    closeTagPopover();
+                    setSelectedId(null);
+                    setPhaseFilter('all');
+                    setStatusFilter(new Set(ALL_STATUSES));
+                    setTagQuery('');
+                    setSettingsOpen(false);
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 999,
+                    border: `1px solid ${themeVars.border}`,
+                    background: isDemoMode ? 'rgba(120,200,255,0.12)' : themeVars.panelBg2,
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: 11,
+                  }}
+                  title="Toggle demo mode"
+                >
+                  {isDemoMode ? 'On' : 'Off'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>Theme</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+                    setSettingsOpen(false);
+                  }}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 12,
+                    border: `1px solid ${themeVars.border}`,
+                    background: themeVars.panelBg2,
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    letterSpacing: 0.15,
+                  }}
+                  title="Toggle dark/light"
+                >
+                  {theme === 'dark' ? 'Dark' : 'Light'}
+                </button>
+              </div>
+              <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 12, opacity: 0.85 }}>
+                <input
+                  type="checkbox"
+                  checked={reducedMotion}
+                  onChange={(e) => setReducedMotion(e.target.checked)}
+                />
+                Reduced motion
+              </label>
+            </div>
+          ) : null}
         </div>
 
         <div style={{ fontSize: 11, opacity: 0.55, lineHeight: 1.35 }}>
@@ -4195,11 +4337,41 @@ useEffect(() => {
                 PRD
               </div>
               <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: themeVars.muted }}>
-                {prdMode === 'editTemplate' ? 'Template edit mode • autosaved locally' : 'View mode'}
+                {prdMode === 'editTemplate'
+                  ? 'Template edit mode • autosaved locally'
+                  : 'Outline goals, scope, and success metrics.'}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={undoPrd}
+                disabled={editingDisabled || activePrdHistory.past.length === 0}
+                style={{
+                  ...prdActionBtn,
+                  cursor:
+                    editingDisabled || activePrdHistory.past.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: editingDisabled || activePrdHistory.past.length === 0 ? 0.5 : 1,
+                }}
+                title="Undo"
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                onClick={redoPrd}
+                disabled={editingDisabled || activePrdHistory.future.length === 0}
+                style={{
+                  ...prdActionBtn,
+                  cursor:
+                    editingDisabled || activePrdHistory.future.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: editingDisabled || activePrdHistory.future.length === 0 ? 0.5 : 1,
+                }}
+                title="Redo"
+              >
+                Redo
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -4231,7 +4403,7 @@ useEffect(() => {
                 type="button"
                 onClick={() => {
                   if (editingDisabled) return;
-                  setPrd(seedPrd());
+                  updatePrdWithHistory(() => seedPrd());
                 }}
                 disabled={editingDisabled}
                 style={{
@@ -4425,8 +4597,10 @@ useEffect(() => {
                             padding: '7px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
-                            background: 'rgba(120,200,255,0.10)',
-                            color: 'inherit',
+                            background: isLight
+                              ? 'rgba(30,120,255,0.18)'
+                              : 'rgba(120,200,255,0.10)',
+                            color: isLight ? 'rgba(10,70,160,0.95)' : 'inherit',
                             cursor: editingDisabled ? 'not-allowed' : 'pointer',
                             opacity: editingDisabled ? 0.5 : 1,
                             fontWeight: 900,
@@ -4443,8 +4617,8 @@ useEffect(() => {
                             padding: '7px 10px',
                             borderRadius: 12,
                             border: `1px solid ${themeVars.border}`,
-                            background: 'rgba(255,155,155,0.08)',
-                            color: 'rgba(255,210,210,0.95)',
+                            background: isLight ? 'rgba(255,99,99,0.18)' : 'rgba(255,155,155,0.08)',
+                            color: isLight ? 'rgba(140,30,30,0.95)' : 'rgba(255,210,210,0.95)',
                             cursor: editingDisabled ? 'not-allowed' : 'pointer',
                             opacity: editingDisabled ? 0.5 : 1,
                             fontWeight: 900,
@@ -4478,7 +4652,7 @@ useEffect(() => {
                           setPrdFocusId(blockId);
                         }}
                         onBlurBlock={(blockId, nextHtml) => {
-                          updatePrdBlock(blockId, nextHtml);
+                          commitPrdBlock(blockId, nextHtml);
                           setPrdFocusId((cur) => (cur === blockId ? null : cur));
                         }}
                         placeholder="Write something…"
@@ -4494,13 +4668,13 @@ useEffect(() => {
                       marginBottom: 18,
                       padding: '2px 2px 0',
                     }}
+                    onMouseEnter={() => setPrdHoverId(b.id)}
+                    onMouseLeave={() => setPrdHoverId((cur) => (cur === b.id ? null : cur))}
                   >
                     <>
                       {b.type === 'title' ? (
                         <div
                           style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}
-                          onMouseEnter={() => setPrdHoverId(b.id)}
-                          onMouseLeave={() => setPrdHoverId((cur) => (cur === b.id ? null : cur))}
                         >
                           <div
                             className="prd-rich"
@@ -4521,6 +4695,9 @@ useEffect(() => {
                               opacity: prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
                               pointerEvents: prdHoverId === b.id && !editingDisabled ? 'auto' : 'none',
                               cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                              border: `1px solid ${themeVars.border}`,
+                              background: themeVars.panelBg3,
+                              color: themeVars.appText,
                               transition: 'opacity 140ms ease',
                             }}
                             aria-label="Edit section"
@@ -4532,8 +4709,6 @@ useEffect(() => {
                       ) : (
                         <div
                           style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}
-                          onMouseEnter={() => setPrdHoverId(b.id)}
-                          onMouseLeave={() => setPrdHoverId((cur) => (cur === b.id ? null : cur))}
                         >
                           <div style={{ ...prdH2Style, marginBottom: 0 }}>{b.label}</div>
                           <button
@@ -4548,6 +4723,9 @@ useEffect(() => {
                               opacity: prdHoverId === b.id ? (editingDisabled ? 0.4 : 1) : 0,
                               pointerEvents: prdHoverId === b.id && !editingDisabled ? 'auto' : 'none',
                               cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                              border: `1px solid ${themeVars.border}`,
+                              background: themeVars.panelBg3,
+                              color: themeVars.appText,
                               transition: 'opacity 140ms ease',
                             }}
                             aria-label="Edit section"
@@ -4661,7 +4839,7 @@ useEffect(() => {
                         setPrdFocusId(blockId);
                       }}
                       onBlurBlock={(blockId, nextHtml) => {
-                        updatePrdBlock(blockId, nextHtml);
+                        commitPrdBlock(blockId, nextHtml);
                         setPrdFocusId((cur) => (cur === blockId ? null : cur));
                       }}
                       placeholder="Write something…"
@@ -5036,11 +5214,11 @@ useEffect(() => {
                     minWidth: 0,
                     overflowX: 'auto',
                     overflowY: 'hidden',
-                    background: 'transparent',
+                    background: isLight ? '#ffffff' : 'transparent',
                     border: 'none',
                     borderRadius: 0,
                     padding: 0,
-                    paddingBottom: 0,
+                    paddingBottom: BOARD_PAD_BOTTOM,
                     boxSizing: 'border-box',
                   }}
                   ref={boardRef}
