@@ -2311,7 +2311,33 @@ export default function App() {
       const minCard = CARD_MIN_H;
       const usable = Math.max(0, h - LANE_SAFE_PAD * 2);
 
-      const rows = Math.max(1, Math.floor((usable + gap) / (minCard + gap)));
+      const q = tagQuery.trim().toLowerCase();
+      const isVisible = (f: Feature) => {
+        if (!statusFilter.has(f.status)) return false;
+        if (phaseFilter !== 'all' && f.phaseId !== phaseFilter) return false;
+        if (!q) return true;
+        const tagMatch = f.tags.some((t) => t.toLowerCase().includes(q));
+        const titleMatch = f.title.toLowerCase().includes(q);
+        const descMatch = f.description.toLowerCase().includes(q);
+        return tagMatch || titleMatch || descMatch;
+      };
+
+      const maxVisibleInLane = Math.max(
+        1,
+        ...doc.phases
+          .filter((p) => !archivedSet.has(p.id))
+          .filter((p) => phaseFilter === 'all' || p.id === phaseFilter)
+          .map((p) => {
+            const hideDone = !!hideDoneByPhase[p.id];
+            return doc.features
+              .filter((f) => f.phaseId === p.id)
+              .filter((f) => (hideDone ? f.status !== 'done' : true))
+              .filter(isVisible).length;
+          })
+      );
+
+      const maxRowsFromHeight = Math.max(1, Math.floor((usable + gap) / (minCard + gap)));
+      const rows = Math.max(1, Math.min(maxRowsFromHeight, maxVisibleInLane));
 
       const usedMin = rows * minCard + Math.max(0, rows - 1) * gap;
       const slack = Math.max(0, usable - usedMin);
@@ -2330,7 +2356,7 @@ export default function App() {
     const ro = new ResizeObserver(compute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [archivedSet, doc.features, doc.phases, hideDoneByPhase, phaseFilter, statusFilter, tagQuery]);
 
   const phasesById = useMemo(() => new Map(doc.phases.map((p) => [p.id, p])), [doc.phases]);
   const archivedPhases = useMemo(
