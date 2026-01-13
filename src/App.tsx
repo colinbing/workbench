@@ -23,8 +23,6 @@ function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
 const now = () => Date.now();
-// Keep the placeholder visible by skipping sortable transforms during NEW_FEATURE drags.
-const newFeatureSortingStrategy = () => null;
 
 function seedDoc(): WorkbenchDoc {
   const phase1 = { id: uid('phase'), name: 'Phase 1', order: 1 };
@@ -305,18 +303,19 @@ function downloadText(filename: string, content: string) {
 }
 
 const CARD_W = 320;
+const NEW_FEATURE_DRAG_ID = 'NEW_FEATURE';
+const NEW_FEATURE_GHOST_ID = 'NEW_FEATURE_GHOST';
 const CARD_MIN_H = 155;
 const CARD_MAX_H = 195;
 const APP_VERSION = '0.1';
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
   const BOARD_PAD_BOTTOM = 0;
-type DocSection = 'prd' | 'roadmap' | 'blog' | 'phases';
+type DocSection = 'prd' | 'roadmap' | 'phases';
 
 const SECTION_LABELS: Record<DocSection, string> = {
   prd: 'PRD',
   roadmap: 'Roadmap',
-  blog: 'Blog',
   phases: 'Phases',
 };
 
@@ -819,14 +818,6 @@ export default function App() {
   }, [theme]);
 
   const STATUS_META = useMemo(() => buildStatusMeta(theme), [theme]);
-  const STATUS_OPTIONS: Array<{ value: FeatureStatus | 'all'; label: string }> = [
-    { value: 'all', label: 'All statuses' },
-    { value: 'not_started', label: STATUS_META.not_started.label },
-    { value: 'in_progress', label: STATUS_META.in_progress.label },
-    { value: 'done', label: STATUS_META.done.label },
-    { value: 'blocked', label: STATUS_META.blocked.label },
-  ];
-
   // Filters
   const ALL_STATUSES: FeatureStatus[] = ['not_started', 'in_progress', 'blocked', 'done'];
   const [statusFilter, setStatusFilter] = useState<Set<FeatureStatus>>(() => new Set(ALL_STATUSES));
@@ -896,7 +887,6 @@ export default function App() {
   const sectionRefs = useRef<Record<DocSection, HTMLElement | null>>({
     prd: null,
     roadmap: null,
-    blog: null,
     phases: null,
   });
   const [activeSection, setActiveSection] = useState<DocSection>('roadmap');
@@ -937,7 +927,7 @@ export default function App() {
   }, [doc.features, detailsId]);
 
   useEffect(() => {
-    if (activeDragId !== 'NEW_FEATURE') return;
+    if (activeDragId !== NEW_FEATURE_DRAG_ID) return;
     const onMove = (e: PointerEvent) => {
       lastPointerRef.current = { x: e.clientX, y: e.clientY };
     };
@@ -1023,6 +1013,7 @@ export default function App() {
       transform: transform ? CSS.Transform.toString(transform) : undefined,
       transition,
     };
+    const ghostActive = activeDragId === NEW_FEATURE_DRAG_ID;
 
     useLayoutEffect(() => {
       if (activeDragId) return;
@@ -1156,6 +1147,7 @@ export default function App() {
             dragStyle.transition ??
             'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 200ms ease, background 200ms ease, border-color 200ms ease',
           opacity: isDragging ? 0.6 : 1,
+          zIndex: ghostActive ? 0 : undefined,
           boxShadow: cardBoxShadow,
         }}
       >
@@ -1542,8 +1534,13 @@ export default function App() {
     );
   }
 
-  const NewFeaturePlaceholder = () => {
-    const { setNodeRef } = useDroppable({ id: 'NEW_FEATURE' });
+  const NewFeaturePlaceholder = ({ id }: { id: string }) => {
+    const { setNodeRef, transform, transition, isOver } = useSortable({
+      id,
+      disabled: true,
+      transition: { duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+    });
+
     return (
       <div
         ref={setNodeRef}
@@ -1554,8 +1551,10 @@ export default function App() {
           borderStyle: 'dashed',
           borderWidth: 2,
           borderColor: themeVars.borderSoft,
-          background: themeVars.panelBg2,
+          background: isOver ? themeVars.panelBg3 : themeVars.panelBg2,
           boxShadow: themeVars.shadow1,
+          position: 'relative',
+          zIndex: 2,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1564,6 +1563,8 @@ export default function App() {
           fontSize: 13,
           opacity: 0.85,
           pointerEvents: 'none',
+          transform: transform ? CSS.Transform.toString(transform) : undefined,
+          transition,
         }}
       >
         New feature
@@ -1582,16 +1583,14 @@ export default function App() {
     const { setNodeRef, isOver } = useDroppable({ id: laneId });
     const phaseDrop = useDroppable({ id: `phase-drop:${phase.id}` });
     const hideDone = !!hideDoneByPhase[phase.id];
-    const visibleFeatures = (hideDone ? features.filter((f) => f.status !== 'done') : features).filter(
-      (f) => f.id !== 'NEW_FEATURE'
-    );
-    const showGhost = activeDragId === 'NEW_FEATURE' && newFeaturePlacement?.phaseId === phase.id;
+    const visibleFeatures = hideDone ? features.filter((f) => f.status !== 'done') : features;
+    const showGhost = activeDragId === NEW_FEATURE_DRAG_ID && newFeaturePlacement?.phaseId === phase.id;
     const ghostIndex = showGhost
       ? Math.max(0, Math.min(newFeaturePlacement!.index, visibleFeatures.length))
       : -1;
     const visibleIds = visibleFeatures.map((f) => f.id);
     const laneItemIds = showGhost
-      ? [...visibleIds.slice(0, ghostIndex), 'NEW_FEATURE', ...visibleIds.slice(ghostIndex)]
+      ? [...visibleIds.slice(0, ghostIndex), NEW_FEATURE_GHOST_ID, ...visibleIds.slice(ghostIndex)]
       : visibleIds;
     const visibleById = useMemo(() => new Map(visibleFeatures.map((f) => [f.id, f])), [visibleFeatures]);
     const laneCount = showGhost ? visibleFeatures.length + 1 : visibleFeatures.length;
@@ -1740,10 +1739,7 @@ export default function App() {
           </div>
         </div>
 
-        <SortableContext
-          items={laneItemIds}
-          strategy={activeDragId === 'NEW_FEATURE' ? newFeatureSortingStrategy : rectSortingStrategy}
-        >
+        <SortableContext items={laneItemIds} strategy={rectSortingStrategy}>
           <div
             ref={(node) => {
               setNodeRef(node);
@@ -1770,8 +1766,8 @@ export default function App() {
             }}
           >
             {laneItemIds.map((id) => {
-              if (id === 'NEW_FEATURE') {
-                return <NewFeaturePlaceholder key="NEW_FEATURE" />;
+              if (id === NEW_FEATURE_GHOST_ID) {
+                return <NewFeaturePlaceholder key={NEW_FEATURE_GHOST_ID} id={NEW_FEATURE_GHOST_ID} />;
               }
               const feature = visibleById.get(id);
               if (!feature) return null;
@@ -1982,7 +1978,6 @@ export default function App() {
     () => {
       const q = tagQuery.trim().toLowerCase();
       return orderedFeatures.filter((f) => {
-        if (f.id === 'NEW_FEATURE') return true;
         if (!statusFilter.has(f.status)) return false;
         if (phaseFilter !== 'all' && f.phaseId !== phaseFilter) return false;
         if (!q) return true;
@@ -2279,29 +2274,52 @@ function createFeatureAtEnd() {
 }
 
 function NewFeatureButton() {
-  const drag = useDraggable({ id: 'NEW_FEATURE' });
+  const drag = useDraggable({ id: NEW_FEATURE_DRAG_ID });
+  const isDraggingNew = drag.isDragging;
 
   return (
-    <button
-      ref={drag.setNodeRef}
-      {...drag.attributes}
-      {...drag.listeners}
-      onClick={() => {
-        if (suppressNewFeatureClickRef.current) {
-          suppressNewFeatureClickRef.current = false;
-          return;
-        }
-        createFeatureAtEnd();
-      }}
-      style={{
-        ...buttonStyle,
-        ...(drag.isDragging ? { opacity: 0.8 } : null),
-        touchAction: 'none',
-      }}
-      title="N"
-    >
-      + New
-    </button>
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+      <div
+        aria-hidden
+        style={{
+          ...buttonStyle,
+          background: themeVars.panelBg2,
+          border: `1px dashed ${themeVars.borderSoft}`,
+          color: themeVars.muted,
+          opacity: isDraggingNew ? 1 : 0,
+          transform: isDraggingNew ? 'scale(1)' : 'scale(0.98)',
+          transition: 'opacity 160ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+          pointerEvents: 'none',
+          position: 'absolute',
+          inset: 0,
+        }}
+      >
+        + New
+      </div>
+
+      <button
+        ref={drag.setNodeRef}
+        {...drag.attributes}
+        {...drag.listeners}
+        onClick={() => {
+          if (suppressNewFeatureClickRef.current) {
+            suppressNewFeatureClickRef.current = false;
+            return;
+          }
+          createFeatureAtEnd();
+        }}
+        style={{
+          ...buttonStyle,
+          opacity: isDraggingNew ? 0 : 1,
+          transform: isDraggingNew ? 'scale(0.98)' : 'scale(1)',
+          transition: 'opacity 140ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+          touchAction: 'none',
+        }}
+        title="N"
+      >
+        + New
+      </button>
+    </div>
   );
 }
 
@@ -2613,9 +2631,6 @@ function commitInlinePhaseEdit(id: string) {
   cancelInlinePhaseEdit();
 }
 
-function laneIdForPhase(phaseId: string) {
-  return `phase:${phaseId}`;
-}
 function isLaneId(id: string) {
   return id.startsWith('phase:');
 }
@@ -2677,7 +2692,7 @@ function openStatusFilterMenu(e: React.MouseEvent) {
   }
 
   function snapByDelta(direction: number) {
-    const order: DocSection[] = ['prd', 'roadmap', 'blog', 'phases'];
+    const order: DocSection[] = ['prd', 'roadmap', 'phases'];
     const idx = order.indexOf(activeSection);
     const nextIdx = clamp(idx + direction, 0, order.length - 1);
     if (nextIdx === idx) return;
@@ -2699,7 +2714,7 @@ function openStatusFilterMenu(e: React.MouseEvent) {
   function sectionFromHash(): DocSection | null {
     const raw = (window.location.hash || '').replace('#', '').trim();
     if (!raw) return null;
-    if (raw === 'prd' || raw === 'roadmap' || raw === 'blog' || raw === 'phases') return raw;
+    if (raw === 'prd' || raw === 'roadmap' || raw === 'phases') return raw;
     return null;
   }
 
@@ -2720,7 +2735,7 @@ useEffect(() => {
     if (!root) return;
 
     if (!activeDragId) return;
-    if (activeDragId === 'NEW_FEATURE') return;
+    if (activeDragId === NEW_FEATURE_DRAG_ID) return;
 
     const prevOverflowY = root.style.overflowY;
     root.style.overflowY = 'hidden';
@@ -2825,7 +2840,6 @@ useEffect(() => {
     const sections: Array<{ key: DocSection; el: HTMLElement | null }> = [
       { key: 'prd', el: sectionRefs.current.prd },
       { key: 'roadmap', el: sectionRefs.current.roadmap },
-      { key: 'blog', el: sectionRefs.current.blog },
       { key: 'phases', el: sectionRefs.current.phases },
     ];
 
@@ -3061,7 +3075,6 @@ useEffect(() => {
     fontWeight: 700,
     cursor: 'pointer',
   };
-  const noStatusSelected = statusFilter.size === 0;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const shellStyle: React.CSSProperties = {
     height: '100vh',
@@ -3128,14 +3141,6 @@ useEffect(() => {
   const PRD_BODY_SIZE = 16;
   const PRD_LINE = 1.6;
 
-  const prdLabelStyle: React.CSSProperties = {
-    fontSize: 12,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    opacity: 0.62,
-    fontWeight: 800,
-  };
-
   const prdBodyStyle: React.CSSProperties = {
     fontSize: PRD_BODY_SIZE,
     lineHeight: PRD_LINE,
@@ -3199,13 +3204,13 @@ useEffect(() => {
         </div>
 
         <div style={{ display: 'grid', gap: 8 }}>
-          {(['prd', 'roadmap', 'blog', 'phases'] as DocSection[]).map((key) => (
+          {(['prd', 'roadmap', 'phases'] as DocSection[]).map((key) => (
             <button
               key={key}
               type="button"
               style={navBtn(activeSection === key)}
               onClick={() => {
-                if (activeDragId === 'NEW_FEATURE') return;
+                if (activeDragId === NEW_FEATURE_DRAG_ID) return;
                 scrollToSection(key);
               }}
             >
@@ -3735,12 +3740,12 @@ useEffect(() => {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
-                autoScroll={activeDragId !== 'NEW_FEATURE'}
+                autoScroll={activeDragId !== NEW_FEATURE_DRAG_ID}
                 onDragStart={(event: DragStartEvent) => {
                   closeTagPopover();
                   const activeId = String(event.active.id);
                   setActiveDragId(activeId);
-                  if (activeId === 'NEW_FEATURE') {
+                  if (activeId === NEW_FEATURE_DRAG_ID) {
                     setDisableDropAnimation(true);
                     suppressNewFeatureClickRef.current = true;
                     lastOverIdRef.current = null;
@@ -3750,19 +3755,19 @@ useEffect(() => {
                 }}
                 onDragOver={(event: DragOverEvent) => {
                   const activeId = String(event.active.id);
-                  if (activeId !== 'NEW_FEATURE') return;
+                  if (activeId !== NEW_FEATURE_DRAG_ID) return;
                   const over = event.over;
                   if (!over) {
                     queueNewFeaturePlacement(null);
                     return;
                   }
                   const rawOverId = String(over.id);
-                  const overId = rawOverId === 'NEW_FEATURE' ? lastOverIdRef.current : rawOverId;
+                  const overId = rawOverId === NEW_FEATURE_GHOST_ID ? lastOverIdRef.current : rawOverId;
                   if (!overId) {
                     queueNewFeaturePlacement(null);
                     return;
                   }
-                  if (rawOverId !== 'NEW_FEATURE') lastOverIdRef.current = rawOverId;
+                  if (rawOverId !== NEW_FEATURE_GHOST_ID) lastOverIdRef.current = rawOverId;
                   let phaseId: string | null = null;
                   let index: number | null = null;
 
@@ -3826,7 +3831,7 @@ useEffect(() => {
                   setActiveDragId(null);
                   clearNewFeaturePlacementQueue();
                   setNewFeaturePlacement(null);
-                  if (String(event.active.id) === 'NEW_FEATURE') {
+                  if (String(event.active.id) === NEW_FEATURE_DRAG_ID) {
                     setTimeout(() => setDisableDropAnimation(false), 0);
                     lastOverIdRef.current = null;
                   }
@@ -3841,7 +3846,7 @@ useEffect(() => {
                   const placement = placementNextRef.current ?? newFeaturePlacement;
                   clearNewFeaturePlacementQueue();
                   setNewFeaturePlacement(null);
-                  if (activeId === 'NEW_FEATURE') {
+                  if (activeId === NEW_FEATURE_DRAG_ID) {
                     setTimeout(() => setDisableDropAnimation(false), 0);
                     lastOverIdRef.current = null;
                   }
@@ -3849,7 +3854,7 @@ useEffect(() => {
                     suppressNewFeatureClickRef.current = false;
                   }, 0);
 
-                  if (activeId === 'NEW_FEATURE') {
+                  if (activeId === NEW_FEATURE_DRAG_ID) {
                     if (!over || !placement) return;
                     const { phaseId, index } = placement;
                     const newId = uid('feat');
@@ -4195,21 +4200,17 @@ useEffect(() => {
                     </div>
                     <DragOverlay dropAnimation={disableDropAnimation ? null : undefined}>
                       {activeDragId
-                        ? activeDragId === 'NEW_FEATURE'
+                        ? activeDragId === NEW_FEATURE_DRAG_ID
                           ? (
                               <div
                                 style={{
-                                  padding: '10px 12px',
-                                  borderRadius: 12,
-                                  border: `1px solid ${themeVars.border}`,
-                                  background: themeVars.panelBg2,
+                                  ...buttonStyle,
                                   boxShadow: themeVars.shadowPop,
-                                  color: themeVars.appText,
-                                  fontWeight: 900,
-                                  fontSize: 12,
+                                  transform: 'translate3d(0,0,0)',
+                                  pointerEvents: 'none',
                                 }}
                               >
-                                New feature
+                                + New
                               </div>
                             )
                           : (() => {
@@ -4237,21 +4238,6 @@ useEffect(() => {
                 {detailsOpen && detailsFeature ? <FeatureDetailsPanel feature={detailsFeature} /> : null}
               </div>
             </DndContext>
-            </div>
-          </div>
-        </section>
-
-        <section
-          id="blog"
-          ref={(el) => {
-            sectionRefs.current.blog = el;
-          }}
-          style={sectionStyle}
-        >
-          <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ opacity: 0.8, fontWeight: 850, fontSize: 18 }}>Blog</div>
-            <div style={{ marginTop: 8, opacity: 0.65, fontSize: 13 }}>
-              Placeholder. We’ll add a simple dated-entry list later.
             </div>
           </div>
         </section>
