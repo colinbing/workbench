@@ -1118,6 +1118,8 @@ export default function App() {
     open: boolean;
     projectId: string | null;
   }>({ open: false, projectId: null });
+  const projectImportRef = useRef<HTMLInputElement | null>(null);
+  const [projectImportTargetId, setProjectImportTargetId] = useState<string | null>(null);
   const [deleteHoldProgress, setDeleteHoldProgress] = useState(0);
   const deleteHoldStartRef = useRef<number | null>(null);
   const deleteHoldRafRef = useRef<number | null>(null);
@@ -3655,6 +3657,125 @@ useEffect(() => {
       day: 'numeric',
     });
   };
+  const sanitizeFilename = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40);
+  const exportProject = (project: ProjectData) => {
+    const name = getPrdTitle(project.prd) || project.doc.title || 'project';
+    const safe = sanitizeFilename(name) || 'project';
+    const payload = { version: 1, project };
+    downloadText(`workbench_${safe}.json`, JSON.stringify(payload, null, 2));
+  };
+  const isValidStatus = (value: unknown): value is FeatureStatus =>
+    value === 'not_started' || value === 'in_progress' || value === 'done' || value === 'blocked';
+  const isValidPhase = (p: any) =>
+    p &&
+    typeof p.id === 'string' &&
+    typeof p.name === 'string' &&
+    typeof p.order === 'number' &&
+    Number.isFinite(p.order);
+  const isValidFeature = (f: any) =>
+    f &&
+    typeof f.id === 'string' &&
+    typeof f.title === 'string' &&
+    typeof f.description === 'string' &&
+    isValidStatus(f.status) &&
+    typeof f.phaseId === 'string' &&
+    Array.isArray(f.tags) &&
+    f.tags.every((t: any) => typeof t === 'string') &&
+    typeof f.order === 'number' &&
+    Number.isFinite(f.order) &&
+    typeof f.createdAt === 'number' &&
+    Number.isFinite(f.createdAt) &&
+    typeof f.updatedAt === 'number' &&
+    Number.isFinite(f.updatedAt);
+  const isValidPrdBlock = (b: any) =>
+    b &&
+    typeof b.id === 'string' &&
+    typeof b.type === 'string' &&
+    typeof b.label === 'string' &&
+    typeof b.value === 'string' &&
+    typeof b.order === 'number' &&
+    Number.isFinite(b.order);
+  const isValidDoc = (doc: any) =>
+    doc &&
+    typeof doc.version === 'number' &&
+    typeof doc.title === 'string' &&
+    Array.isArray(doc.phases) &&
+    doc.phases.every(isValidPhase) &&
+    Array.isArray(doc.features) &&
+    doc.features.every(isValidFeature);
+  const isValidPrd = (prdDoc: any) =>
+    prdDoc && Array.isArray(prdDoc.blocks) && prdDoc.blocks.every(isValidPrdBlock);
+  const importProjectInto = (projectId: string, file: File) => {
+    if (editingDisabled) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = String(reader.result || '');
+        const parsed = JSON.parse(raw) as { version?: number; project?: ProjectData };
+        if (!parsed || parsed.version !== 1 || !parsed.project) {
+          window.alert('Invalid project file.');
+          return;
+        }
+        const incoming = parsed.project as any;
+        if (!isValidDoc(incoming.doc) || !isValidPrd(incoming.prd)) {
+          window.alert('Invalid project file.');
+          return;
+        }
+        const prdTitle = getPrdTitle(incoming.prd as PrdDoc);
+        const nextDoc = prdTitle ? { ...incoming.doc, title: prdTitle } : incoming.doc;
+        const nextColor =
+          typeof incoming.colorId === 'string' &&
+          PROJECT_COLORS.some((c) => c.id === incoming.colorId)
+            ? incoming.colorId
+            : undefined;
+        if (!window.confirm('Overwrite this project with the imported data?')) return;
+
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  doc: nextDoc,
+                  prd: incoming.prd as PrdDoc,
+                  colorId: nextColor ?? p.colorId,
+                  lastEdited: now(),
+                }
+              : p
+          )
+        );
+        setPrdMode('view');
+        setPrdInlineEditId(null);
+        cancelInlineTitleEdit();
+        cancelInlinePhaseEdit();
+        closeEditor();
+        closeDetails();
+        closeCtxMenu();
+        closeStatusPopover();
+        closeStatusFilterMenu();
+        closeTagPopover();
+        setSelectedId(null);
+        setPhaseFilter('all');
+        setStatusFilter(new Set(ALL_STATUSES));
+        setTagQuery('');
+      } catch {
+        window.alert('Invalid project file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+  const triggerProjectImport = (projectId: string) => {
+    if (editingDisabled) return;
+    setProjectImportTargetId(projectId);
+    if (projectImportRef.current) {
+      projectImportRef.current.value = '';
+      projectImportRef.current.click();
+    }
+  };
   const DELETE_HOLD_MS = 1600;
   const resetDeleteHold = () => {
     if (deleteHoldRafRef.current != null) cancelAnimationFrame(deleteHoldRafRef.current);
@@ -3856,30 +3977,65 @@ useEffect(() => {
             );
           })}
           {projects.length < 2 ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (editingDisabled) return;
-                setNewProjectName('');
-                setIsProjectModalOpen(true);
-              }}
-              disabled={editingDisabled}
-              style={{
-                padding: '8px 10px',
-                borderRadius: 12,
-                border: `1px dashed ${themeVars.border}`,
-                background: themeVars.panelBg2,
-                color: themeVars.appText,
-                cursor: editingDisabled ? 'not-allowed' : 'pointer',
-                fontWeight: 900,
-                fontSize: 12,
-                opacity: editingDisabled ? 0.5 : 1,
-              }}
-              title={editingDisabled ? 'Demo mode: project creation disabled' : 'Create project'}
-            >
-              + New project
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingDisabled) return;
+                  setNewProjectName('');
+                  setIsProjectModalOpen(true);
+                }}
+                disabled={editingDisabled}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 12,
+                  border: `1px dashed ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: themeVars.appText,
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  opacity: editingDisabled ? 0.5 : 1,
+                }}
+                title={editingDisabled ? 'Demo mode: project creation disabled' : 'Create project'}
+              >
+                + New project
+              </button>
+              <button
+                type="button"
+                onClick={() => triggerProjectImport(activeProjectId)}
+                disabled={editingDisabled}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 12,
+                  border: `1px solid ${themeVars.borderSoft}`,
+                  background: themeVars.panelBg,
+                  color: 'inherit',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  opacity: editingDisabled ? 0.6 : 1,
+                }}
+                title={editingDisabled ? 'Demo mode: import disabled' : 'Import project'}
+              >
+                Import
+              </button>
+            </div>
           ) : null}
+          <input
+            ref={projectImportRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const targetId = projectImportTargetId ?? activeProjectId;
+              if (!targetId) return;
+              importProjectInto(targetId, file);
+              setProjectImportTargetId(null);
+            }}
+          />
         </div>
 
         <div style={{ height: 1, background: themeVars.divider, margin: '4px 0' }} />
@@ -5403,6 +5559,47 @@ useEffect(() => {
                   </button>
                 );
               })}
+            </div>
+            <div style={{ height: 1, background: themeVars.divider, marginTop: 2 }} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => exportProject(projects.find((p) => p.id === projectColorPicker.projectId)!)}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  fontSize: 12,
+                }}
+              >
+                Export project
+              </button>
+              <button
+                type="button"
+                onClick={() => triggerProjectImport(projectColorPicker.projectId!)}
+                disabled={editingDisabled}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 10,
+                  border: `1px solid ${themeVars.border}`,
+                  background: themeVars.panelBg2,
+                  color: 'inherit',
+                  cursor: editingDisabled ? 'not-allowed' : 'pointer',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  opacity: editingDisabled ? 0.6 : 1,
+                }}
+                title={editingDisabled ? 'Demo mode: import disabled' : 'Import project'}
+              >
+                Import (overwrite)
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: themeVars.muted }}>
+              Import replaces this project with the file contents.
             </div>
             <div style={{ height: 1, background: themeVars.divider, marginTop: 2 }} />
             <div style={{ fontSize: 12, fontWeight: 800, color: themeVars.muted }}>Danger zone</div>
