@@ -3543,6 +3543,14 @@ useEffect(() => {
     return theme === 'light' ? light : dark;
   }, [theme]);
   const isLight = theme === 'light';
+  const logoSrc = isLight
+    ? new URL('../images/workshop_logo.png', import.meta.url).href
+    : new URL('../images/workshop_logo_white.png', import.meta.url).href;
+  const logoStyle: React.CSSProperties = {
+    height: 30,
+    width: 'auto',
+    display: 'block',
+  };
   const panelOverlay = isLight
     ? 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.25))'
     : 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03))';
@@ -4016,7 +4024,7 @@ useEffect(() => {
       <aside style={sidebarStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 0.2 }}>Workbench</div>
+            <img src={logoSrc} alt="Workbench" style={logoStyle} />
             {isDemoMode ? (
               <div
                 style={{
