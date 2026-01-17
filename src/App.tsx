@@ -545,6 +545,9 @@ const APP_VERSION = '0.1';
 const GRID_ROW_GAP = 10;
 const GRID_COL_GAP = 16;
 const BOARD_PAD_BOTTOM = 10
+const SNAP_DURATION = 600;
+const SNAP_WHEEL_THRESHOLD = 150;
+const SNAP_WHEEL_IDLE_MS = 260;
 const LANE_SAFE_PAD = 8;
 type DocSection = 'prd' | 'roadmap' | 'phases';
 
@@ -1209,6 +1212,8 @@ export default function App() {
   const [flashId, setFlashId] = useState<string | null>(null);
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
   const scrollAnimRef = useRef<number>(0);
+  const scrollSnapRestoreRef = useRef<{ snapType: string; behavior: string } | null>(null);
+  const wheelSnapRef = useRef<{ sum: number; dir: number; t: number }>({ sum: 0, dir: 0, t: 0 });
   const sectionRefs = useRef<Record<DocSection, HTMLElement | null>>({
     prd: null,
     roadmap: null,
@@ -1995,12 +2000,13 @@ export default function App() {
           overflow: 'hidden',
           borderRadius: 16,
           border: `1px solid ${themeVars.borderSoft}`,
-          background: isOver ? themeVars.panelBg3 : themeVars.panelBg,
+          backgroundColor: isOver ? themeVars.panelBg3 : themeVars.panelBg,
+          backgroundImage: panelOverlay,
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '100% 100%',
           boxShadow: phaseDrop.isOver
             ? `0 0 0 2px rgba(120,200,255,0.35), ${themeVars.shadow1}`
             : themeVars.shadow1,
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
         }}
       >
         <div
@@ -2177,10 +2183,11 @@ export default function App() {
           overflow: 'hidden',
           borderRadius: 18,
           border: `1px solid ${themeVars.border}`,
-          background: themeVars.panelBg3,
+          backgroundColor: themeVars.panelBg3,
+          backgroundImage: panelOverlay,
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '100% 100%',
           boxShadow: themeVars.shadow3,
-          backdropFilter: 'blur(14px)',
-          WebkitBackdropFilter: 'blur(14px)',
           display: 'flex',
           flexDirection: 'column',
           transform: detailsOpen ? 'translateX(0)' : 'translateX(14px)',
@@ -2678,7 +2685,18 @@ export default function App() {
   function scrollToFeatureCard(id: string) {
     requestAnimationFrame(() => {
       const el = document.querySelector(`[data-feature-card-id="${id}"]`) as HTMLElement | null;
-      el?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
+      const board = boardRef.current;
+      if (!el || !board) return;
+
+      const boardRect = board.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const boardCenter = boardRect.left + boardRect.width / 2;
+      const elCenter = elRect.left + elRect.width / 2;
+      const nextLeft = board.scrollLeft + (elCenter - boardCenter);
+      const maxLeft = Math.max(0, board.scrollWidth - board.clientWidth);
+      const clampedLeft = clamp(nextLeft, 0, maxLeft);
+
+      board.scrollTo({ left: clampedLeft, behavior: reducedMotion ? 'auto' : 'smooth' });
     });
   }
 
@@ -3133,7 +3151,25 @@ function openStatusFilterMenu(e: React.MouseEvent) {
     return root.scrollTop + (elRect.top - rootRect.top);
   }
 
+  function resetWheelSnap() {
+    wheelSnapRef.current = { sum: 0, dir: 0, t: 0 };
+  }
+
+  function restoreScrollSnap(root: HTMLElement) {
+    const prev = scrollSnapRestoreRef.current;
+    if (!prev) return;
+    root.style.scrollSnapType = prev.snapType || 'y mandatory';
+    root.style.scrollBehavior = prev.behavior || (reducedMotion ? 'auto' : 'smooth');
+    scrollSnapRestoreRef.current = null;
+  }
+
   function animateScrollTo(root: HTMLElement, top: number, duration = 260, onDone?: () => void) {
+    if (scrollAnimRef.current) {
+      cancelAnimationFrame(scrollAnimRef.current);
+      scrollAnimRef.current = 0;
+      restoreScrollSnap(root);
+      isProgrammaticScrollRef.current = false;
+    }
     if (reducedMotion) {
       root.scrollTo({ top, behavior: 'auto' });
       return;
@@ -3147,17 +3183,18 @@ function openStatusFilterMenu(e: React.MouseEvent) {
     }
 
     isProgrammaticScrollRef.current = true;
-    const prevSnapType = root.style.scrollSnapType;
-    const prevBehavior = root.style.scrollBehavior;
+    scrollSnapRestoreRef.current = {
+      snapType: root.style.scrollSnapType,
+      behavior: root.style.scrollBehavior,
+    };
     root.style.scrollSnapType = 'none';
     root.style.scrollBehavior = 'auto';
 
-    if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
     const start = performance.now();
 
     const tick = (now: number) => {
       const t = clamp((now - start) / duration, 0, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
+      const eased = 1 - Math.pow(1 - t, 4);
       root.scrollTop = startTop + delta * eased;
       if (t < 1) {
         scrollAnimRef.current = requestAnimationFrame(tick);
@@ -3165,8 +3202,7 @@ function openStatusFilterMenu(e: React.MouseEvent) {
       }
 
       root.scrollTop = top;
-      root.style.scrollSnapType = prevSnapType || '';
-      root.style.scrollBehavior = prevBehavior || '';
+      restoreScrollSnap(root);
       requestAnimationFrame(() => {
         isProgrammaticScrollRef.current = false;
         onDone?.();
@@ -3181,6 +3217,7 @@ function openStatusFilterMenu(e: React.MouseEvent) {
     const idx = order.indexOf(activeSection);
     const nextIdx = clamp(idx + direction, 0, order.length - 1);
     if (nextIdx === idx) return;
+    resetWheelSnap();
     scrollToSection(order[nextIdx]);
   }
 
@@ -3189,12 +3226,13 @@ function openStatusFilterMenu(e: React.MouseEvent) {
     const el = sectionRefs.current[section];
     if (!root || !el) return;
 
+    resetWheelSnap();
     setActiveSection(section);
     const hash = `#${section}`;
     if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
 
     const top = getScrollTopForEl(root, el);
-    animateScrollTo(root, top, 260);
+    animateScrollTo(root, top, SNAP_DURATION);
   }
 
   function sectionFromHash(): DocSection | null {
@@ -3240,19 +3278,51 @@ useEffect(() => {
         e.preventDefault();
         return;
       }
+      if (isProgrammaticScrollRef.current) {
+        e.preventDefault();
+        return;
+      }
       if (isEditorOpen) return;
       if (isTypingContext(e.target)) return;
       const target = e.target as HTMLElement | null;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
       if (target) {
-        if (target.closest('[data-no-snap]')) return;
         if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
         if (target.isContentEditable) return;
+        const noSnap = target.closest('[data-no-snap]') as HTMLElement | null;
+        if (noSnap && noSnap.scrollWidth > noSnap.clientWidth + 1) {
+          if (Math.abs(e.deltaX) > 6) return;
+        }
+        let el: HTMLElement | null = target;
+        while (el && el !== root && el !== document.body) {
+          const style = window.getComputedStyle(el);
+          const overflowY = style.overflowY;
+          const canScroll =
+            (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+            el.scrollHeight > el.clientHeight + 1;
+          if (canScroll) {
+            const wantsDown = e.deltaY > 0;
+            const canScrollDown = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+            const canScrollUp = el.scrollTop > 0;
+            if ((wantsDown && canScrollDown) || (!wantsDown && canScrollUp)) return;
+          }
+          el = el.parentElement;
+        }
       }
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-      if (Math.abs(e.deltaY) < 90) return;
       e.preventDefault();
       const direction = e.deltaY > 0 ? 1 : -1;
-      snapByDelta(direction);
+      const now = performance.now();
+      const snap = wheelSnapRef.current;
+      if (snap.dir !== direction || now - snap.t > SNAP_WHEEL_IDLE_MS) {
+        snap.sum = 0;
+      }
+      snap.dir = direction;
+      snap.t = now;
+      snap.sum += Math.abs(e.deltaY);
+      if (snap.sum >= SNAP_WHEEL_THRESHOLD) {
+        snap.sum = 0;
+        snapByDelta(direction);
+      }
     };
 
     root.addEventListener('wheel', onWheel, { passive: false });
@@ -3498,6 +3568,9 @@ useEffect(() => {
     return theme === 'light' ? light : dark;
   }, [theme]);
   const isLight = theme === 'light';
+  const panelOverlay = isLight
+    ? 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.25))'
+    : 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03))';
 
   const pageStyle: React.CSSProperties = {
     display: 'flex',
@@ -3539,10 +3612,11 @@ useEffect(() => {
     borderRadius: 14,
     border: `1px solid ${themeVars.borderSoft}`,
     outline: 'none',
-    background: themeVars.panelBg2,
+    backgroundColor: themeVars.panelBg2,
+    backgroundImage: panelOverlay,
+    backgroundRepeat: 'no-repeat',
+    backgroundSize: '100% 100%',
     boxShadow: themeVars.shadow1,
-    backdropFilter: 'blur(8px)',
-    WebkitBackdropFilter: 'blur(8px)',
     transition:
       'transform 160ms ease, box-shadow 200ms ease, background 200ms ease, border-color 200ms ease',
   };
@@ -3550,7 +3624,7 @@ useEffect(() => {
   const cardHover: React.CSSProperties = {
     transform: 'translateY(-2px)',
     boxShadow: themeVars.shadow2,
-    background: themeVars.panelBg3,
+    backgroundColor: themeVars.panelBg3,
   };
 
   const cardActive: React.CSSProperties = {
