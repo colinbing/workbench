@@ -18,7 +18,7 @@ export interface Phase {
   order: number;
 }
 
-export interface WorkbenchDoc {
+export interface WorkshopDoc {
   version: number;
   title: string;
   phases: Phase[];

@@ -17,7 +17,7 @@ import {
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Feature, FeatureStatus, Phase, WorkbenchDoc } from './types';
+import type { Feature, FeatureStatus, Phase, WorkshopDoc } from './types';
 import { loadDoc } from './storage';
 
 function uid(prefix = 'id') {
@@ -25,7 +25,7 @@ function uid(prefix = 'id') {
 }
 const now = () => Date.now();
 
-function seedDoc(): WorkbenchDoc {
+function seedDoc(): WorkshopDoc {
   const phase1 = { id: uid('phase'), name: 'Phase 1', order: 1 };
   const phase2 = { id: uid('phase'), name: 'Phase 2', order: 2 };
   const phase3 = { id: uid('phase'), name: 'Phase 3', order: 3 };
@@ -132,7 +132,7 @@ function seedDoc(): WorkbenchDoc {
     },
   ];
 
-  return { version: 1, title: 'Workbench', phases: [phase1, phase2, phase3], features };
+  return { version: 1, title: 'Workshop', phases: [phase1, phase2, phase3], features };
 }
 
 function buildStatusMeta(
@@ -218,7 +218,7 @@ type ThemeMode = 'dark' | 'light';
 
 function loadTheme(): ThemeMode {
   try {
-    const raw = localStorage.getItem('workbench_theme');
+    const raw = localStorage.getItem('workshop_theme');
     if (raw === 'light' || raw === 'dark') return raw;
   } catch {
     // ignore
@@ -228,13 +228,13 @@ function loadTheme(): ThemeMode {
 
 function saveTheme(mode: ThemeMode) {
   try {
-    localStorage.setItem('workbench_theme', mode);
+    localStorage.setItem('workshop_theme', mode);
   } catch {
     // ignore
   }
 }
 
-function nextOrder(doc: WorkbenchDoc) {
+function nextOrder(doc: WorkshopDoc) {
   const max = doc.features.reduce((m, f) => Math.max(m, f.order), 0);
   return max + 1;
 }
@@ -265,7 +265,7 @@ type PrdDoc = {
 
 type ProjectData = {
   id: string;
-  doc: WorkbenchDoc;
+  doc: WorkshopDoc;
   prd: PrdDoc;
   lastEdited: number;
   colorId?: string;
@@ -403,7 +403,7 @@ function seedPrd(): PrdDoc {
   };
 }
 
-const PROJECTS_KEY = 'workbench_projects_v1';
+const PROJECTS_KEY = 'workshop_projects_v1';
 
 function getPrdTitle(prd: PrdDoc) {
   const titleBlock = prd.blocks.find((b) => b.type === 'title');
@@ -464,7 +464,7 @@ function saveProjects(projects: ProjectData[], activeProjectId: string) {
 
 function loadPrd(): PrdDoc | null {
   try {
-    const raw = localStorage.getItem('workbench_prd_v1');
+    const raw = localStorage.getItem('workshop_prd_v1');
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PrdDoc;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.blocks)) return null;
@@ -780,7 +780,7 @@ function PhaseFromSpaceView({
   statusMeta,
   isLight,
 }: {
-  doc: WorkbenchDoc;
+  doc: WorkshopDoc;
   onOpenPhase: (phaseId: string) => void;
   onShowAll: () => void;
   onArchivePhase: (phaseId: string) => void;
@@ -1056,7 +1056,7 @@ export default function App() {
     () => initialProjects.activeProjectId
   );
   const [isDemoMode, setIsDemoMode] = useState(false);
-  const [demoDoc, setDemoDoc] = useState<WorkbenchDoc>(() => seedDoc());
+  const [demoDoc, setDemoDoc] = useState<WorkshopDoc>(() => seedDoc());
   const [demoPrd, setDemoPrd] = useState<PrdDoc>(() => seedPrd());
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) ?? projects[0],
@@ -1066,7 +1066,7 @@ export default function App() {
   const prd = isDemoMode ? demoPrd : activeProject?.prd ?? seedPrd();
   const setDoc = isDemoMode
     ? setDemoDoc
-    : (next: React.SetStateAction<WorkbenchDoc>) => {
+    : (next: React.SetStateAction<WorkshopDoc>) => {
         setProjects((prev) =>
           prev.map((p) => {
             if (p.id !== activeProjectId) return p;
@@ -1206,7 +1206,7 @@ export default function App() {
 
   function loadArchivedPhases(): string[] {
     try {
-      const raw = localStorage.getItem('workbench_archived_phases');
+      const raw = localStorage.getItem('workshop_archived_phases');
       const arr = raw ? JSON.parse(raw) : [];
       return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
     } catch {
@@ -1218,7 +1218,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('workbench_archived_phases', JSON.stringify(archivedPhaseIds));
+      localStorage.setItem('workshop_archived_phases', JSON.stringify(archivedPhaseIds));
     } catch {
       // ignore
     }
@@ -2469,8 +2469,8 @@ export default function App() {
     items.push({ kind: 'action', label: 'Export: Roadmap.md', run: () => exportRoadmapMarkdown() });
     items.push({
       kind: 'action',
-      label: 'Export: workbench.json',
-      run: () => downloadText('workbench.json', JSON.stringify(doc, null, 2)),
+      label: 'Export: workshop.json',
+      run: () => downloadText('workshop.json', JSON.stringify(doc, null, 2)),
     });
 
     for (const p of visiblePhases) {
@@ -2911,7 +2911,7 @@ function beginInlinePhaseEdit(id: string, current: string) {
     const feats = [...doc.features].sort((a, b) => a.order - b.order);
 
     const lines: string[] = [];
-    const docTitle = doc.title?.trim() || 'Workbench';
+    const docTitle = doc.title?.trim() || 'Workshop';
     lines.push(`# Roadmap — ${docTitle}`);
     lines.push('');
 
@@ -3803,7 +3803,7 @@ useEffect(() => {
     const name = getPrdTitle(project.prd) || project.doc.title || 'project';
     const safe = sanitizeFilename(name) || 'project';
     const payload = { version: 1, project };
-    downloadText(`workbench_${safe}.json`, JSON.stringify(payload, null, 2));
+    downloadText(`workshop_${safe}.json`, JSON.stringify(payload, null, 2));
   };
   const isValidStatus = (value: unknown): value is FeatureStatus =>
     value === 'not_started' || value === 'in_progress' || value === 'done' || value === 'blocked';
@@ -4024,7 +4024,7 @@ useEffect(() => {
       <aside style={sidebarStyle}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            <img src={logoSrc} alt="Workbench" style={logoStyle} />
+            <img src={logoSrc} alt="Workshop" style={logoStyle} />
             {isDemoMode ? (
               <div
                 style={{
